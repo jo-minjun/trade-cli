@@ -55,6 +55,12 @@ export class OrderRepository {
       .get(id) as OrderRow | undefined;
   }
 
+  findByExternalId(externalId: string): OrderRow | undefined {
+    return this.db
+      .prepare("SELECT * FROM orders WHERE external_id = ?")
+      .get(externalId) as OrderRow | undefined;
+  }
+
   updateStatus(
     id: number,
     status: string,

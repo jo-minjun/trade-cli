@@ -256,8 +256,10 @@ export function createCexCommand(
     .action(withErrorHandling(async (orderId: string, opts: { via: string }) => {
       const exchange = registry.get("cex", opts.via);
       const result = await exchange.cancelOrder(orderId);
-      // TODO: look up internal order by external_id and update status to 'cancelled'.
-      // OrderRepository does not yet have findByExternalId, so this is a known limitation.
+      const internalOrder = orderRepo.findByExternalId(orderId);
+      if (internalOrder) {
+        orderRepo.updateStatus(internalOrder.id, "cancelled");
+      }
       console.log(chalk.green("Order cancelled:"), result.id);
     }));
 

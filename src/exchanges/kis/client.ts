@@ -231,23 +231,73 @@ export class KisExchange implements Exchange {
   }
 
   async getOrder(orderId: string): Promise<OrderResponse> {
-    // KIS doesn't have a direct single order query; return minimal info
-    return {
-      id: orderId,
-      symbol: "",
-      side: "buy",
-      type: "limit",
-      status: "pending",
-      amount: 0,
-      price: null,
-      filledAmount: 0,
-      filledPrice: null,
-      createdAt: new Date().toISOString(),
-    };
+    const orders = await this.fetchDailyOrders();
+    const found = orders.find((o) => o.id === orderId);
+    if (!found) {
+      return {
+        id: orderId, symbol: "", side: "buy", type: "limit",
+        status: "pending", amount: 0, price: null,
+        filledAmount: 0, filledPrice: null, createdAt: new Date().toISOString(),
+      };
+    }
+    return found;
   }
 
-  async getOpenOrders(_symbol?: string): Promise<OrderResponse[]> {
-    return [];
+  private async fetchDailyOrders(): Promise<OrderResponse[]> {
+    const [acctPrefix, acctSuffix] = this.auth.accountNo.split("-");
+    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const params = new URLSearchParams({
+      CANO: acctPrefix,
+      ACNT_PRDT_CD: acctSuffix,
+      INQR_STRT_DT: today,
+      INQR_END_DT: today,
+      SLL_BUY_DVSN_CD: "00",
+      INQR_DVSN: "00",
+      PDNO: "",
+      CCLD_DVSN: "00",
+      ORD_GNO_BRNO: "",
+      ODNO: "",
+      INQR_DVSN_3: "00",
+      INQR_DVSN_1: "",
+      CTX_AREA_FK100: "",
+      CTX_AREA_NK100: "",
+    });
+    const data = (await this.fetchApi(
+      "GET",
+      `/uapi/domestic-stock/v1/trading/inquire-daily-ccld?${params}`,
+      { tr_id: this.auth.getInquiryTrId() },
+    )) as any;
+
+    return (data.output1 || []).map((item: any) => {
+      const ordQty = parseInt(item.ord_qty);
+      const filledQty = parseInt(item.tot_ccld_qty);
+      let status: string;
+      if (filledQty === 0) status = "pending";
+      else if (filledQty < ordQty) status = "partially_filled";
+      else status = "filled";
+
+      return {
+        id: item.odno,
+        symbol: item.pdno,
+        side: item.sll_buy_dvsn_cd === "02" ? "buy" : "sell",
+        type: item.ord_dvsn_cd === "01" ? "market" : "limit",
+        status,
+        amount: ordQty,
+        price: parseInt(item.ord_unpr) || null,
+        filledAmount: filledQty,
+        filledPrice: parseInt(item.avg_prvs) || null,
+        createdAt: `${item.ord_dt.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}T${item.ord_tmd.replace(/(\d{2})(\d{2})(\d{2})/, "$1:$2:$3")}`,
+      } as OrderResponse;
+    });
+  }
+
+  async getOpenOrders(symbol?: string): Promise<OrderResponse[]> {
+    const orders = await this.fetchDailyOrders();
+    return orders.filter((o) => {
+      const isOpen = o.status === "pending" || o.status === "partially_filled";
+      if (symbol) return isOpen && o.symbol === symbol;
+      return isOpen;
+    });
   }
 
   async getStockInfo(symbol: string): Promise<StockInfo> {

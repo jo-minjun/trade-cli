@@ -42,6 +42,99 @@ describe("KisExchange", () => {
     expect(order.side).toBe("buy");
   });
 
+  it("getOrder returns order status (mocked)", async () => {
+    const mockResponse = {
+      output1: [
+        {
+          odno: "00001",
+          pdno: "005930",
+          sll_buy_dvsn_cd: "02",
+          ord_dvsn_cd: "01",
+          ord_qty: "10",
+          ord_unpr: "0",
+          tot_ccld_qty: "10",
+          avg_prvs: "70000",
+          ord_dt: "20260308",
+          ord_tmd: "100000",
+        },
+        {
+          odno: "00002",
+          pdno: "005930",
+          sll_buy_dvsn_cd: "01",
+          ord_dvsn_cd: "00",
+          ord_qty: "5",
+          ord_unpr: "71000",
+          tot_ccld_qty: "0",
+          avg_prvs: "0",
+          ord_dt: "20260308",
+          ord_tmd: "100100",
+        },
+      ],
+    };
+
+    vi.spyOn(exchange as any, "fetchApi").mockResolvedValue(mockResponse);
+
+    const order = await exchange.getOrder("00001");
+    expect(order.id).toBe("00001");
+    expect(order.symbol).toBe("005930");
+    expect(order.side).toBe("buy");
+    expect(order.type).toBe("market");
+    expect(order.status).toBe("filled");
+    expect(order.filledAmount).toBe(10);
+    expect(order.filledPrice).toBe(70000);
+  });
+
+  it("getOpenOrders returns unfilled orders (mocked)", async () => {
+    const mockResponse = {
+      output1: [
+        {
+          odno: "00001", pdno: "005930", sll_buy_dvsn_cd: "02",
+          ord_dvsn_cd: "01", ord_qty: "10", ord_unpr: "0",
+          tot_ccld_qty: "10", avg_prvs: "70000",
+          ord_dt: "20260308", ord_tmd: "100000",
+        },
+        {
+          odno: "00002", pdno: "005930", sll_buy_dvsn_cd: "01",
+          ord_dvsn_cd: "00", ord_qty: "5", ord_unpr: "71000",
+          tot_ccld_qty: "0", avg_prvs: "0",
+          ord_dt: "20260308", ord_tmd: "100100",
+        },
+      ],
+    };
+
+    vi.spyOn(exchange as any, "fetchApi").mockResolvedValue(mockResponse);
+
+    const orders = await exchange.getOpenOrders();
+    expect(orders).toHaveLength(1);
+    expect(orders[0].id).toBe("00002");
+    expect(orders[0].status).toBe("pending");
+  });
+
+  it("getOpenOrders filters by symbol (mocked)", async () => {
+    const mockResponse = {
+      output1: [
+        {
+          odno: "00001", pdno: "005930", sll_buy_dvsn_cd: "02",
+          ord_dvsn_cd: "00", ord_qty: "10", ord_unpr: "70000",
+          tot_ccld_qty: "0", avg_prvs: "0",
+          ord_dt: "20260308", ord_tmd: "100000",
+        },
+        {
+          odno: "00002", pdno: "000660", sll_buy_dvsn_cd: "02",
+          ord_dvsn_cd: "00", ord_qty: "5", ord_unpr: "50000",
+          tot_ccld_qty: "0", avg_prvs: "0",
+          ord_dt: "20260308", ord_tmd: "100100",
+        },
+      ],
+    };
+
+    vi.spyOn(exchange as any, "fetchApi").mockResolvedValue(mockResponse);
+
+    const orders = await exchange.getOpenOrders("005930");
+    expect(orders).toHaveLength(1);
+    expect(orders[0].symbol).toBe("005930");
+  });
+
   it("uses correct trade IDs", () => {
     // Mock trading uses VTTC prefixes
     expect((exchange as any).auth.getTradeId("buy")).toBe("VTTC0802U");

@@ -72,6 +72,10 @@ export class KisAuth {
     return side === "buy" ? "TTTC0802U" : "TTTC0801U";
   }
 
+  getInquiryTrId(): string {
+    return this.config.isMock ? "VTTC8001R" : "TTTC8001R";
+  }
+
   get accountNo(): string {
     return this.config.accountNo;
   }

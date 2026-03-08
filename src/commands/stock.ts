@@ -5,7 +5,7 @@ import type { ExchangeRegistry } from "../exchanges/registry.js";
 import type { RiskManager } from "../risk/manager.js";
 import type { OrderRepository, PositionRepository, DailyPnlRepository } from "../db/repository.js";
 import { isStockExchange } from "../exchanges/types.js";
-import { withErrorHandling, updatePositionAfterOrder } from "./helpers.js";
+import { withErrorHandling, updatePositionAfterOrder, waitForFill } from "./helpers.js";
 
 export function createStockCommand(
   config: TradeConfig,
@@ -49,6 +49,26 @@ export function createStockCommand(
     }));
 
   cmd
+    .command("orders")
+    .description("List open orders")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
+    .option("--symbol <symbol>", "Filter by stock code")
+    .action(withErrorHandling(async (opts: { via: string; symbol?: string }) => {
+      const exchange = registry.get("stock", opts.via);
+      const orders = await exchange.getOpenOrders(opts.symbol);
+      if (orders.length === 0) {
+        console.log("No open orders");
+        return;
+      }
+      console.log(chalk.bold("Open Orders:"));
+      orders.forEach((o) => {
+        console.log(
+          `  ${o.id} | ${o.side.toUpperCase()} ${o.symbol} | ${o.type} | amount: ${o.amount}${o.price ? ` @ ${o.price}` : ""}`,
+        );
+      });
+    }));
+
+  cmd
     .command("buy")
     .description("Place a buy order")
     .argument("<symbol>", "Stock code")
@@ -86,14 +106,14 @@ export function createStockCommand(
           return;
         }
 
-        const order = await exchange.placeOrder({
+        let order = await exchange.placeOrder({
           symbol,
           side: "buy",
           type: opts.type as "market" | "limit",
           amount: amountNum,
           price: opts.price ? parseFloat(opts.price) : undefined,
         });
-        orderRepo.create({
+        const internalId = orderRepo.create({
           market_type: "stock",
           via: opts.via,
           symbol,
@@ -103,6 +123,18 @@ export function createStockCommand(
           price: opts.price ? parseFloat(opts.price) : undefined,
           external_id: order.id,
         });
+
+        // Poll for fill status
+        if (order.status !== "filled" && order.status !== "partially_filled") {
+          order = await waitForFill(exchange, order.id);
+          if (order.status === "filled" || order.status === "partially_filled") {
+            orderRepo.updateStatus(internalId, order.status, {
+              filled_amount: order.filledAmount,
+              filled_price: order.filledPrice ?? 0,
+            });
+          }
+        }
+
         updatePositionAfterOrder("buy", "stock", opts.via, symbol, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
       }),
@@ -136,14 +168,14 @@ export function createStockCommand(
         }
 
         const exchange = registry.get("stock", opts.via);
-        const order = await exchange.placeOrder({
+        let order = await exchange.placeOrder({
           symbol,
           side: "sell",
           type: opts.type as "market" | "limit",
           amount: amountNum,
           price: opts.price ? parseFloat(opts.price) : undefined,
         });
-        orderRepo.create({
+        const internalId = orderRepo.create({
           market_type: "stock",
           via: opts.via,
           symbol,
@@ -153,8 +185,51 @@ export function createStockCommand(
           price: opts.price ? parseFloat(opts.price) : undefined,
           external_id: order.id,
         });
+
+        // Poll for fill status
+        if (order.status !== "filled" && order.status !== "partially_filled") {
+          order = await waitForFill(exchange, order.id);
+          if (order.status === "filled" || order.status === "partially_filled") {
+            orderRepo.updateStatus(internalId, order.status, {
+              filled_amount: order.filledAmount,
+              filled_price: order.filledPrice ?? 0,
+            });
+          }
+        }
+
         updatePositionAfterOrder("sell", "stock", opts.via, symbol, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
+      }),
+    );
+
+  cmd
+    .command("candles")
+    .description("Get candle data")
+    .argument("<symbol>", "Stock code")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
+    .option("--interval <interval>", "Candle interval (only daily supported)", "1d")
+    .option("--count <count>", "Number of candles", "10")
+    .action(
+      withErrorHandling(async (
+        symbol: string,
+        opts: { via: string; interval: string; count: string },
+      ) => {
+        if (opts.interval !== "1d" && opts.interval !== "D") {
+          console.log(chalk.yellow("Warning: KIS only supports daily candles. Showing daily data."));
+        }
+        const exchange = registry.get("stock", opts.via);
+        const candles = await exchange.getCandles(
+          symbol,
+          opts.interval,
+          parseInt(opts.count),
+        );
+        console.log(chalk.bold(`${symbol} Candles (daily)`));
+        candles.forEach((c) => {
+          const date = new Date(c.timestamp).toISOString().split("T")[0];
+          console.log(
+            `  ${date} | O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`,
+          );
+        });
       }),
     );
 
@@ -166,8 +241,10 @@ export function createStockCommand(
     .action(withErrorHandling(async (orderId: string, opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       const result = await exchange.cancelOrder(orderId);
-      // TODO: look up internal order by external_id and update status to 'cancelled'.
-      // OrderRepository does not yet have findByExternalId, so this is a known limitation.
+      const internalOrder = orderRepo.findByExternalId(orderId);
+      if (internalOrder) {
+        orderRepo.updateStatus(internalOrder.id, "cancelled");
+      }
       console.log(chalk.green("Order cancelled:"), result.id);
     }));
 
