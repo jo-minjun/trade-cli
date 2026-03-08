@@ -6,7 +6,6 @@ import {
   OrderRepository,
   PositionRepository,
   DailyPnlRepository,
-  RiskEventRepository,
 } from "./repository.js";
 import type Database from "better-sqlite3";
 

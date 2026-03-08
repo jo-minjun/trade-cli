@@ -25,7 +25,7 @@ export class RiskManager {
 
   constructor(
     private config: RiskConfig,
-    private db: Database.Database,
+    db: Database.Database,
   ) {
     this.positionRepo = new PositionRepository(db);
     this.pnlRepo = new DailyPnlRepository(db);

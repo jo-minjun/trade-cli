@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, saveConfig, getConfigDir } from "./loader.js";
+import { loadConfig, saveConfig } from "./loader.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
 
 describe("config loader", () => {
