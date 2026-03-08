@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { loadConfig, saveConfig, getConfigDir } from "../config/loader.js";
 import { DEFAULT_CONFIG } from "../config/defaults.js";
 import { stringify } from "yaml";
+import type { TradeConfig } from "../config/types.js";
+import { withErrorHandling } from "./helpers.js";
 
 function maskSecrets(
   obj: Record<string, unknown>,
@@ -53,12 +55,12 @@ function setNestedValue(
   if (typeof value === "string") {
     if (value === "true") value = true;
     else if (value === "false") value = false;
-    else if (!isNaN(Number(value)) && value !== "") value = Number(value);
+    else if (!isNaN(Number(value)) && value !== "" && !value.startsWith("0x")) value = Number(value);
   }
   current[keys[keys.length - 1]] = value;
 }
 
-export function createConfigCommand(): Command {
+export function createConfigCommand(config: TradeConfig): Command {
   const cmd = new Command("config").description("Manage configuration");
 
   cmd
@@ -102,6 +104,38 @@ export function createConfigCommand(): Command {
       saveConfig(config);
       console.log(chalk.green("Updated"), key, "=", value);
     });
+
+  cmd
+    .command("setup")
+    .description("Generate API credentials for a platform")
+    .option("--via <platform>", "Platform", "polymarket")
+    .action(withErrorHandling(async (opts: { via: string }) => {
+      if (opts.via !== "polymarket") {
+        console.log(chalk.red(`Setup is not supported for: ${opts.via}`));
+        return;
+      }
+      const polyConfig = config.prediction.polymarket as any;
+      if (!polyConfig?.["private-key"]) {
+        console.log(chalk.red("Set private key first:"), "trade config set prediction.polymarket.private-key 0x...");
+        return;
+      }
+      if (polyConfig["api-key"]) {
+        console.log(chalk.yellow("API credentials already exist. Delete them first if you want to regenerate."));
+        return;
+      }
+
+      const { ClobClient } = await import("@polymarket/clob-client");
+      const { Wallet } = await import("ethers");
+      const signer = new Wallet(polyConfig["private-key"]);
+      const tempClient = new ClobClient("https://clob.polymarket.com", 137, signer);
+      const creds = await tempClient.createOrDeriveApiKey();
+
+      console.log(chalk.green("API credentials generated!"));
+      console.log("Run these commands to save them:");
+      console.log(`  trade config set prediction.polymarket.api-key ${creds.key}`);
+      console.log(`  trade config set prediction.polymarket.api-secret ${creds.secret}`);
+      console.log(`  trade config set prediction.polymarket.api-passphrase ${creds.passphrase}`);
+    }));
 
   return cmd;
 }

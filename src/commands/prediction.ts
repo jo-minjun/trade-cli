@@ -71,12 +71,13 @@ export function createPredictionCommand(
     .argument("<outcome>", "Outcome (YES/NO)")
     .argument("<amount>", "Amount in USDC")
     .option("--via <platform>", "Platform to use", config.prediction["default-via"])
+    .option("--price <price>", "Price (0-1 probability)")
     .action(
       withErrorHandling(async (
         marketId: string,
         outcome: string,
         amount: string,
-        opts: { via: string },
+        opts: { via: string; price?: string },
       ) => {
         const amountNum = parseFloat(amount);
         const riskResult = riskManager.check({
@@ -96,6 +97,7 @@ export function createPredictionCommand(
           side: "buy",
           type: "limit",
           amount: amountNum,
+          price: opts.price ? parseFloat(opts.price) : undefined,
         });
         orderRepo.create({
           market_type: "prediction",
@@ -118,12 +120,13 @@ export function createPredictionCommand(
     .argument("<outcome>", "Outcome (YES/NO)")
     .argument("<amount>", "Amount")
     .option("--via <platform>", "Platform to use", config.prediction["default-via"])
+    .option("--price <price>", "Price (0-1 probability)")
     .action(
       withErrorHandling(async (
         marketId: string,
         outcome: string,
         amount: string,
-        opts: { via: string },
+        opts: { via: string; price?: string },
       ) => {
         const amountNum = parseFloat(amount);
         const riskResult = riskManager.check({
@@ -143,6 +146,7 @@ export function createPredictionCommand(
           side: "sell",
           type: "limit",
           amount: amountNum,
+          price: opts.price ? parseFloat(opts.price) : undefined,
         });
         orderRepo.create({
           market_type: "prediction",

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Polymarket trading via `@polymarket/clob-client` SDK (`placeOrder`, `cancelOrder`, `getBalance`, `getOpenOrders`)
+- `config setup --via polymarket` command for API credential generation
+- `--price` option for `prediction buy` and `prediction sell`
+- Extended `PolymarketCredentials` with api-key, api-secret, api-passphrase, funder-address
 - CEX Guide documentation (`CEX_GUIDE.md`)
 - Testing status checklist in README
 - `cex orders` command for listing open orders
@@ -27,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `PolymarketExchange` now implements `PredictionExchange` interface (was `Exchange`)
+- `PolymarketExchange` constructor accepts `PolymarketCredentials` object (was plain string)
+- `getCandles()` now throws "Not supported" for Polymarket (was returning empty array)
 - README rewritten with 6-step risk check table, circuit breaker details, stop-loss config, and macOS note
 - Command examples standardized to `./trade` and `KRW-BTC` format
 

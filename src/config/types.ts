@@ -11,6 +11,10 @@ export interface KisCredentials {
 
 export interface PolymarketCredentials {
   "private-key": string;
+  "api-key"?: string;
+  "api-secret"?: string;
+  "api-passphrase"?: string;
+  "funder-address"?: string;
 }
 
 export interface CircuitBreakerConfig {

@@ -35,10 +35,8 @@ if (kisConfig?.["app-key"]) {
   registry.register("stock", "kis", new KisExchange(kisConfig["app-key"], kisConfig["app-secret"] ?? "", kisConfig["account-no"] ?? ""));
 }
 
-const polyConfig = config.prediction.polymarket as { "private-key"?: string } | undefined;
-if (polyConfig?.["private-key"]) {
-  registry.register("prediction", "polymarket", new PolymarketExchange(polyConfig["private-key"]));
-}
+const polyConfig = config.prediction.polymarket as { "private-key"?: string; "api-key"?: string; "api-secret"?: string; "api-passphrase"?: string; "funder-address"?: string } | undefined;
+registry.register("prediction", "polymarket", new PolymarketExchange(polyConfig));
 
 const program = new Command();
 
@@ -47,7 +45,7 @@ program
   .description("Trading CLI tool for OpenClaw AI agents")
   .version("0.1.0");
 
-program.addCommand(createConfigCommand());
+program.addCommand(createConfigCommand(config));
 program.addCommand(createCexCommand(config, registry, riskManager, orderRepo, positionRepo, pnlRepo));
 program.addCommand(createStockCommand(config, registry, riskManager, orderRepo, positionRepo, pnlRepo));
 program.addCommand(createPredictionCommand(config, registry, riskManager, orderRepo, positionRepo, pnlRepo));

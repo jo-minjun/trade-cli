@@ -34,7 +34,7 @@ describe("config commands", () => {
     saveConfig(DEFAULT_CONFIG, testDir);
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const cmd = createConfigCommand();
+    const cmd = createConfigCommand(DEFAULT_CONFIG);
     // Invoke the set subcommand with an invalid top-level key
     await cmd.parseAsync(["set", "exchanges.upbit.access-key", "test-value"], {
       from: "user",

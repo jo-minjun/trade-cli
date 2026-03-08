@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { resolve, join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getConfigDir } from "../config/loader.js";
+import type { PolymarketCredentials } from "../config/types.js";
 import {
   installLaunchAgent,
   uninstallLaunchAgent,
@@ -119,13 +120,13 @@ export function createMonitorCommand(): Command {
       }
 
       const polyConfig = config.prediction.polymarket as
-        | { "private-key"?: string }
+        | PolymarketCredentials
         | undefined;
       if (polyConfig?.["private-key"]) {
         registry.register(
           "prediction",
           "polymarket",
-          new PolymarketExchange(polyConfig["private-key"]),
+          new PolymarketExchange(polyConfig),
         );
       }
 
