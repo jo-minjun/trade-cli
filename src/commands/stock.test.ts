@@ -19,5 +19,7 @@ describe("stock CLI", () => {
     expect(subcommands).toContain("buy");
     expect(subcommands).toContain("sell");
     expect(subcommands).toContain("info");
+    expect(subcommands).toContain("orders");
+    expect(subcommands).toContain("candles");
   });
 });

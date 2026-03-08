@@ -57,6 +57,27 @@ describe("OrderRepository", () => {
     expect(order!.filled_amount).toBe(100000);
   });
 
+  it("finds order by external_id", () => {
+    const id = repo.create({
+      market_type: "cex",
+      via: "upbit",
+      symbol: "BTC-KRW",
+      side: "buy",
+      type: "limit",
+      amount: 100000,
+      external_id: "ext-123",
+    });
+    const order = repo.findByExternalId("ext-123");
+    expect(order).toBeDefined();
+    expect(order!.id).toBe(id);
+    expect(order!.external_id).toBe("ext-123");
+  });
+
+  it("returns undefined for missing external_id", () => {
+    const order = repo.findByExternalId("nonexistent");
+    expect(order).toBeUndefined();
+  });
+
   it("lists open orders by exchange", () => {
     repo.create({
       market_type: "cex",
