@@ -230,7 +230,7 @@ risk:
 
 | 항목 | 선택 | 이유 |
 |------|------|------|
-| 언어 | TypeScript (Node.js) | OpenClaw와 동일 런타임 |
+| 언어 | TypeScript (Node.js 24+) | 최신 런타임 |
 | CLI 프레임워크 | commander | 서브커맨드 지원, OpenClaw과 동일 |
 | DB | SQLite (better-sqlite3) | 로컬 파일, 별도 서버 불필요 |
 | HTTP 클라이언트 | undici | Node.js 내장 |

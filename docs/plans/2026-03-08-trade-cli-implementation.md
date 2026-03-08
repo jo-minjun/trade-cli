@@ -6,7 +6,7 @@
 
 **Architecture:** 레이어드 구조 — Config → DB → Risk → Exchange Adapters → CLI Commands → Monitor. 각 거래소 어댑터는 공통 인터페이스를 구현하며, 리스크 매니저가 모든 주문을 게이트킵한다.
 
-**Tech Stack:** TypeScript (ESM), Node.js 22+, commander, better-sqlite3, undici, yaml, Vitest, pnpm, tsdown, launchd
+**Tech Stack:** TypeScript (ESM), Node.js 24+, commander, better-sqlite3, undici, yaml, Vitest, pnpm, tsdown, launchd
 
 ---
 

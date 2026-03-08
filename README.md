@@ -85,7 +85,7 @@ risk:
 
 ## Tech Stack
 
-TypeScript, Node.js 22+, commander, better-sqlite3, Vitest, pnpm
+TypeScript, Node.js 24+, commander, better-sqlite3, Vitest, pnpm
 
 ## License
 
