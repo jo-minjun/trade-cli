@@ -52,6 +52,11 @@ export class RiskManager {
   }
 
   check(input: RiskCheckInput): RiskCheckResult {
+    // Validate input: reject NaN, negative, zero, or Infinity amounts
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      return { approved: false, reason: `Invalid order amount: ${input.amount}` };
+    }
+
     // Sell orders bypass risk checks
     if (input.side === "sell") {
       return { approved: true };

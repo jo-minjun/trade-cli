@@ -1,6 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
 import { checkStopLoss } from "./runner.js";
 import type { MonitorContext } from "./runner.js";
+import type { RiskConfig } from "../config/types.js";
+
+function mockRiskConfig(stopLoss: number): RiskConfig {
+  return {
+    "max-total-capital": 1000000,
+    "max-daily-loss": 50000,
+    "max-total-exposure": 0.8,
+    "max-order-size": 200000,
+    "max-position-ratio": 0.3,
+    "circuit-breaker": { "consecutive-losses": 5, "cooldown-minutes": 60 },
+    cex: { "max-allocation": 400000, "stop-loss": stopLoss },
+    stock: { "max-allocation": 400000, "stop-loss": stopLoss },
+    prediction: { "max-allocation": 200000, "stop-loss": stopLoss },
+  };
+}
 
 function createMockPnlRepo() {
   return { record: vi.fn() };
@@ -46,7 +61,7 @@ describe("Stop-loss monitor", () => {
       orderRepo: mockOrderRepo as any,
       pnlRepo: mockPnlRepo as any,
       riskManager: mockRiskManager as any,
-      config: { stopLossPercent: 0.05 },
+      riskConfig: mockRiskConfig(0.05),
     };
 
     const actions = await checkStopLoss(ctx);
@@ -94,7 +109,7 @@ describe("Stop-loss monitor", () => {
       orderRepo: { create: vi.fn() } as any,
       pnlRepo: createMockPnlRepo() as any,
       riskManager: createMockRiskManager() as any,
-      config: { stopLossPercent: 0.05 },
+      riskConfig: mockRiskConfig(0.05),
     };
 
     const actions = await checkStopLoss(ctx);
@@ -135,7 +150,7 @@ describe("Stop-loss monitor", () => {
       orderRepo: { create: vi.fn() } as any,
       pnlRepo: createMockPnlRepo() as any,
       riskManager: createMockRiskManager() as any,
-      config: { stopLossPercent: 0.05 },
+      riskConfig: mockRiskConfig(0.05),
     };
 
     const actions = await checkStopLoss(ctx);
@@ -175,7 +190,7 @@ describe("Stop-loss monitor", () => {
       orderRepo: mockOrderRepo as any,
       pnlRepo: createMockPnlRepo() as any,
       riskManager: createMockRiskManager() as any,
-      config: { stopLossPercent: 0.05 },
+      riskConfig: mockRiskConfig(0.05),
     };
 
     const actions = await checkStopLoss(ctx);
@@ -197,7 +212,7 @@ describe("Stop-loss monitor", () => {
       orderRepo: { create: vi.fn() } as any,
       pnlRepo: createMockPnlRepo() as any,
       riskManager: createMockRiskManager() as any,
-      config: { stopLossPercent: 0.05 },
+      riskConfig: mockRiskConfig(0.05),
     };
 
     const actions = await checkStopLoss(ctx);
@@ -236,7 +251,7 @@ describe("Stop-loss monitor", () => {
       orderRepo: mockOrderRepo as any,
       pnlRepo: mockPnlRepo as any,
       riskManager: mockRiskManager as any,
-      config: { stopLossPercent: 0.1 },
+      riskConfig: mockRiskConfig(0.1),
     };
 
     await checkStopLoss(ctx);
@@ -286,7 +301,7 @@ describe("Stop-loss monitor", () => {
       orderRepo: mockOrderRepo as any,
       pnlRepo: mockPnlRepo as any,
       riskManager: mockRiskManager as any,
-      config: { stopLossPercent: 0.05 },
+      riskConfig: mockRiskConfig(0.05),
     };
 
     const actions = await checkStopLoss(ctx);

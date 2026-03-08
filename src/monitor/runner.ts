@@ -5,6 +5,7 @@ import type {
   DailyPnlRepository,
 } from "../db/repository.js";
 import type { RiskManager } from "../risk/manager.js";
+import type { RiskConfig } from "../config/types.js";
 
 const CHECK_INTERVAL_MS = 30_000;
 
@@ -14,7 +15,7 @@ export interface MonitorContext {
   orderRepo: OrderRepository;
   pnlRepo: DailyPnlRepository;
   riskManager: RiskManager;
-  config: { stopLossPercent: number };
+  riskConfig: RiskConfig;
 }
 
 export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
@@ -25,7 +26,9 @@ export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
     try {
       const exchange = ctx.registry.get(pos.market_type, pos.via);
       const ticker = await exchange.getPrice(pos.symbol);
-      const stopPrice = pos.avg_entry_price * (1 - ctx.config.stopLossPercent);
+      const marketType = pos.market_type as "cex" | "stock" | "prediction";
+      const stopLossPercent = ctx.riskConfig[marketType]?.["stop-loss"] ?? 0.05;
+      const stopPrice = pos.avg_entry_price * (1 - stopLossPercent);
 
       // Update current price in position
       ctx.positionRepo.upsert({
@@ -56,23 +59,24 @@ export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
         });
 
         if (order.status === "filled" || order.status === "partially_filled") {
-          // Record PnL
-          const pnl =
-            (ticker.price - pos.avg_entry_price) * pos.quantity;
+          const soldQty = order.filledAmount ?? pos.quantity;
+          const sellPrice = order.filledPrice ?? ticker.price;
+          const pnl = (sellPrice - pos.avg_entry_price) * soldQty;
           const today = new Date().toISOString().split("T")[0];
           ctx.pnlRepo.record(today, pos.market_type, pos.via, pnl, false);
           ctx.riskManager.recordLoss();
 
-          // Remove position after confirmed fill
+          // Reduce position by filled quantity only
+          const remainingQty = Math.max(0, pos.quantity - soldQty);
           ctx.positionRepo.upsert({
             market_type: pos.market_type,
             via: pos.via,
             symbol: pos.symbol,
-            quantity: 0,
-            avg_entry_price: 0,
+            quantity: remainingQty,
+            avg_entry_price: remainingQty > 0 ? pos.avg_entry_price : 0,
           });
           actions.push(
-            `Stop-loss triggered: ${pos.symbol} (${pos.via}) sold ${pos.quantity} at ${ticker.price}`,
+            `Stop-loss triggered: ${pos.symbol} (${pos.via}) sold ${soldQty} at ${sellPrice}`,
           );
         } else {
           actions.push(

@@ -5,7 +5,7 @@ import type { ExchangeRegistry } from "../exchanges/registry.js";
 import type { RiskManager } from "../risk/manager.js";
 import type { OrderRepository, PositionRepository, DailyPnlRepository } from "../db/repository.js";
 import { isStockExchange } from "../exchanges/types.js";
-import { withErrorHandling, updatePositionAfterOrder, waitForFill } from "./helpers.js";
+import { withErrorHandling, updatePositionAfterOrder, waitForFill, safeCreateOrder } from "./helpers.js";
 
 export function createStockCommand(
   config: TradeConfig,
@@ -113,7 +113,7 @@ export function createStockCommand(
           amount: amountNum,
           price: opts.price ? parseFloat(opts.price) : undefined,
         });
-        const internalId = orderRepo.create({
+        const internalId = safeCreateOrder(orderRepo, {
           market_type: "stock",
           via: opts.via,
           symbol,
@@ -127,7 +127,7 @@ export function createStockCommand(
         // Poll for fill status
         if (order.status !== "filled" && order.status !== "partially_filled") {
           order = await waitForFill(exchange, order.id);
-          if (order.status === "filled" || order.status === "partially_filled") {
+          if (internalId != null && (order.status === "filled" || order.status === "partially_filled")) {
             orderRepo.updateStatus(internalId, order.status, {
               filled_amount: order.filledAmount,
               filled_price: order.filledPrice ?? 0,
@@ -175,7 +175,7 @@ export function createStockCommand(
           amount: amountNum,
           price: opts.price ? parseFloat(opts.price) : undefined,
         });
-        const internalId = orderRepo.create({
+        const internalId = safeCreateOrder(orderRepo, {
           market_type: "stock",
           via: opts.via,
           symbol,
@@ -189,7 +189,7 @@ export function createStockCommand(
         // Poll for fill status
         if (order.status !== "filled" && order.status !== "partially_filled") {
           order = await waitForFill(exchange, order.id);
-          if (order.status === "filled" || order.status === "partially_filled") {
+          if (internalId != null && (order.status === "filled" || order.status === "partially_filled")) {
             orderRepo.updateStatus(internalId, order.status, {
               filled_amount: order.filledAmount,
               filled_price: order.filledPrice ?? 0,

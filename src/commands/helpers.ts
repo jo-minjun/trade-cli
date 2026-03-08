@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import type { Exchange, OrderResponse } from "../exchanges/types.js";
-import type { PositionRepository, DailyPnlRepository } from "../db/repository.js";
+import type { PositionRepository, DailyPnlRepository, OrderRepository, CreateOrderInput } from "../db/repository.js";
 
 // Wraps async command actions with error handling
 export function withErrorHandling(fn: (...args: any[]) => Promise<void>) {
@@ -25,6 +25,18 @@ export async function waitForFill(exchange: Exchange, orderId: string, maxRetrie
   }
   // Return last fetched state even if not filled
   return exchange.getOrder(orderId);
+}
+
+// Saves order to DB with error recovery — logs warning if DB write fails after exchange order succeeded
+export function safeCreateOrder(orderRepo: OrderRepository, input: CreateOrderInput): number | null {
+  try {
+    return orderRepo.create(input);
+  } catch (err) {
+    console.error(chalk.yellow("Warning: Order placed on exchange but failed to save to local DB."));
+    console.error(chalk.yellow(`  External ID: ${input.external_id}, Symbol: ${input.symbol}, Side: ${input.side}, Amount: ${input.amount}`));
+    console.error(chalk.yellow(`  Error: ${err instanceof Error ? err.message : String(err)}`));
+    return null;
+  }
 }
 
 // Updates position and PnL after a successful order

@@ -5,7 +5,7 @@ import type { ExchangeRegistry } from "../exchanges/registry.js";
 import type { RiskManager } from "../risk/manager.js";
 import type { OrderRepository, PositionRepository, DailyPnlRepository } from "../db/repository.js";
 import { isPredictionExchange } from "../exchanges/types.js";
-import { withErrorHandling, updatePositionAfterOrder } from "./helpers.js";
+import { withErrorHandling, updatePositionAfterOrder, waitForFill, safeCreateOrder } from "./helpers.js";
 
 export function createPredictionCommand(
   config: TradeConfig,
@@ -92,14 +92,14 @@ export function createPredictionCommand(
           return;
         }
         const exchange = registry.get("prediction", opts.via);
-        const order = await exchange.placeOrder({
+        let order = await exchange.placeOrder({
           symbol: `${marketId}:${outcome}`,
           side: "buy",
           type: "limit",
           amount: amountNum,
           price: opts.price ? parseFloat(opts.price) : undefined,
         });
-        orderRepo.create({
+        const internalId = safeCreateOrder(orderRepo, {
           market_type: "prediction",
           via: opts.via,
           symbol: `${marketId}:${outcome}`,
@@ -108,6 +108,18 @@ export function createPredictionCommand(
           amount: amountNum,
           external_id: order.id,
         });
+
+        // Poll for fill status
+        if (order.status !== "filled" && order.status !== "partially_filled") {
+          order = await waitForFill(exchange, order.id);
+          if (internalId != null && (order.status === "filled" || order.status === "partially_filled")) {
+            orderRepo.updateStatus(internalId, order.status, {
+              filled_amount: order.filledAmount,
+              filled_price: order.filledPrice ?? 0,
+            });
+          }
+        }
+
         updatePositionAfterOrder("buy", "prediction", opts.via, `${marketId}:${outcome}`, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
       }),
@@ -141,14 +153,14 @@ export function createPredictionCommand(
           return;
         }
         const exchange = registry.get("prediction", opts.via);
-        const order = await exchange.placeOrder({
+        let order = await exchange.placeOrder({
           symbol: `${marketId}:${outcome}`,
           side: "sell",
           type: "limit",
           amount: amountNum,
           price: opts.price ? parseFloat(opts.price) : undefined,
         });
-        orderRepo.create({
+        const internalId = safeCreateOrder(orderRepo, {
           market_type: "prediction",
           via: opts.via,
           symbol: `${marketId}:${outcome}`,
@@ -157,6 +169,18 @@ export function createPredictionCommand(
           amount: amountNum,
           external_id: order.id,
         });
+
+        // Poll for fill status
+        if (order.status !== "filled" && order.status !== "partially_filled") {
+          order = await waitForFill(exchange, order.id);
+          if (internalId != null && (order.status === "filled" || order.status === "partially_filled")) {
+            orderRepo.updateStatus(internalId, order.status, {
+              filled_amount: order.filledAmount,
+              filled_price: order.filledPrice ?? 0,
+            });
+          }
+        }
+
         updatePositionAfterOrder("sell", "prediction", opts.via, `${marketId}:${outcome}`, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
       }),

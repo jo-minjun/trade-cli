@@ -20,7 +20,7 @@ export function createMonitorCommand(): Command {
     .description("Install and start the monitor daemon")
     .action(() => {
       const logDir = join(getConfigDir(), "logs");
-      mkdirSync(logDir, { recursive: true });
+      mkdirSync(logDir, { recursive: true, mode: 0o700 });
       const tradePath = resolve(process.argv[1] || "trade");
       installLaunchAgent(tradePath);
       console.log(chalk.green("Monitor daemon installed and started"));
@@ -141,7 +141,7 @@ export function createMonitorCommand(): Command {
         orderRepo,
         pnlRepo,
         riskManager,
-        config: { stopLossPercent: config.risk.cex["stop-loss"] },
+        riskConfig: config.risk,
       });
     });
 
