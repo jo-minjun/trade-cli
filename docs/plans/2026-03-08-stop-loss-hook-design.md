@@ -496,7 +496,92 @@ git commit -m "feat: wire on-stop-loss-hook config to monitor runner"
 
 ---
 
-## Task 5: Final verification and squash
+## Task 5: Update MONITOR_GUIDE.md
+
+**Files:**
+- Modify: `MONITOR_GUIDE.md`
+
+**Step 1: Add Hook section after the "Polling Interval" section**
+
+Insert a new "Stop-Loss Hook" section in the Configuration area, after the polling interval block (after line 56 of current file). Content:
+
+```markdown
+### Stop-Loss Hook
+
+You can configure an optional shell script that runs whenever a stop-loss sell is executed. The script receives trade details as JSON via stdin, so you can integrate any notification system (Slack, Discord, etc.).
+
+```bash
+# Set the hook script path
+./trade config set monitor.on-stop-loss-hook ~/.trade-cli/hooks/on-stop-loss.sh
+```
+
+The corresponding `config.yaml` section:
+
+```yaml
+monitor:
+  interval-seconds: 30
+  on-stop-loss-hook: ~/.trade-cli/hooks/on-stop-loss.sh
+```
+
+**Example hook script:**
+
+```bash
+#!/bin/bash
+# ~/.trade-cli/hooks/on-stop-loss.sh
+# Reads JSON from stdin and sends a Slack notification
+
+read -r payload
+symbol=$(echo "$payload" | jq -r '.symbol')
+pnl=$(echo "$payload" | jq -r '.realized_pnl')
+price=$(echo "$payload" | jq -r '.execution_price')
+
+curl -s -X POST "$SLACK_WEBHOOK_URL" \
+  -H 'Content-Type: application/json' \
+  -d "{\"text\": \"🔻 Stop-loss triggered: ${symbol} sold at ${price} (PnL: ${pnl})\"}"
+```
+
+**JSON payload fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event` | string | Always `"stop-loss"` |
+| `timestamp` | string | ISO 8601 timestamp |
+| `symbol` | string | Trading pair (e.g. `BTC-KRW`) |
+| `market_type` | string | `cex`, `stock`, or `prediction` |
+| `side` | string | Always `"sell"` |
+| `quantity` | number | Quantity sold |
+| `entry_price` | number | Average entry price |
+| `stop_price` | number | Stop-loss threshold price |
+| `execution_price` | number | Actual sell price |
+| `realized_pnl` | number | Realized profit/loss |
+| `order_id` | string | Exchange order ID |
+
+> **Note:** The hook runs asynchronously (fire-and-forget). Failures do not affect the monitor. Make sure the script is executable (`chmod +x`).
+```
+
+**Step 2: Also update the "How It Works" section**
+
+Update step 5 to mention the hook:
+
+Change:
+```
+5. **If filled:** record realized PnL and notify the risk manager (may activate circuit breaker)
+```
+To:
+```
+5. **If filled:** record realized PnL, notify the risk manager (may activate circuit breaker), and run the stop-loss hook if configured
+```
+
+**Step 3: Commit**
+
+```bash
+git add MONITOR_GUIDE.md
+git commit -m "docs: add stop-loss hook section to monitor guide"
+```
+
+---
+
+## Task 6: Final verification and squash
 
 **Step 1: Run full test suite**
 
@@ -510,10 +595,10 @@ Expected: SUCCESS.
 
 **Step 3: Squash commits into one**
 
-Squash the 4 task commits into a single commit:
+Squash the 5 task commits into a single commit:
 
 ```bash
-git rebase -r HEAD~4
+git rebase -r HEAD~5
 # squash into: "feat: add stop-loss hook for monitor"
 ```
 
@@ -529,3 +614,4 @@ git rebase -r HEAD~4
 | `src/monitor/runner.ts` | Modify | Add `onStopLossHook` to context, call hook on filled sell |
 | `src/monitor/runner.test.ts` | Modify | 3 new tests: hook called, not called when unset, not called when pending |
 | `src/commands/monitor.ts` | Modify | Pass config hook path to MonitorContext |
+| `MONITOR_GUIDE.md` | Modify | Add hook configuration section and JSON payload docs |
