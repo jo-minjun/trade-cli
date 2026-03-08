@@ -19,6 +19,12 @@ export interface StockInfo {
   marketCap: number | null;
 }
 
+function validateStockSymbol(symbol: string): void {
+  if (!/^\d{6}$/.test(symbol)) {
+    throw new Error(`Invalid stock symbol: ${symbol}. Must be a 6-digit number.`);
+  }
+}
+
 export class KisExchange implements Exchange {
   name = "kis";
   private auth: KisAuth;
@@ -58,9 +64,14 @@ export class KisExchange implements Exchange {
   }
 
   async getPrice(symbol: string): Promise<Ticker> {
+    validateStockSymbol(symbol);
+    const params = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: symbol,
+    });
     const data = (await this.fetchApi(
       "GET",
-      `/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${symbol}`,
+      `/uapi/domestic-stock/v1/quotations/inquire-price?${params}`,
       { tr_id: "FHKST01010100" },
     )) as any;
     const o = data.output;
@@ -77,9 +88,14 @@ export class KisExchange implements Exchange {
   }
 
   async getOrderbook(symbol: string): Promise<Orderbook> {
+    validateStockSymbol(symbol);
+    const params = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: symbol,
+    });
     const data = (await this.fetchApi(
       "GET",
-      `/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${symbol}`,
+      `/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn?${params}`,
       { tr_id: "FHKST01010200" },
     )) as any;
     const o = data.output1;
@@ -103,10 +119,18 @@ export class KisExchange implements Exchange {
     _interval: string,
     _count = 50,
   ): Promise<Candle[]> {
+    validateStockSymbol(symbol);
     const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const params = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: symbol,
+      FID_INPUT_DATE_1: today,
+      FID_PERIOD_DIV_CODE: "D",
+      FID_ORG_ADJ_PRC: "0",
+    });
     const data = (await this.fetchApi(
       "GET",
-      `/uapi/domestic-stock/v1/quotations/inquire-daily-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${symbol}&FID_INPUT_DATE_1=${today}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`,
+      `/uapi/domestic-stock/v1/quotations/inquire-daily-price?${params}`,
       { tr_id: "FHKST01010400" },
     )) as any;
     return (data.output || []).map((c: any) => ({
@@ -227,9 +251,14 @@ export class KisExchange implements Exchange {
   }
 
   async getStockInfo(symbol: string): Promise<StockInfo> {
+    validateStockSymbol(symbol);
+    const params = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: symbol,
+    });
     const data = (await this.fetchApi(
       "GET",
-      `/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${symbol}`,
+      `/uapi/domestic-stock/v1/quotations/inquire-price?${params}`,
       { tr_id: "FHKST01010100" },
     )) as any;
     const o = data.output;

@@ -6,6 +6,28 @@ import type {
   DailyPnlRepository,
 } from "../db/repository.js";
 
+function parsePeriodDays(period: string): number {
+  const match = period.match(/^(\d+)\s*(d|w|m)$/i);
+  if (!match) {
+    const num = parseInt(period);
+    return isNaN(num) || num <= 0 ? 7 : num;
+  }
+  const value = parseInt(match[1]);
+  const unit = match[2].toLowerCase();
+  if (unit === "d") return value;
+  if (unit === "w") return value * 7;
+  if (unit === "m") return value * 30;
+  return 7;
+}
+
+function csvEscape(field: unknown): string {
+  const str = field == null ? "" : String(field);
+  // Prefix formula-triggering characters with a tab to prevent injection
+  const safe = /^[=+\-@]/.test(str) ? `\t${str}` : str;
+  // Wrap in double quotes and escape internal double quotes
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
 export function createHistoryCommand(
   orderRepo: OrderRepository,
   pnlRepo: DailyPnlRepository,
@@ -47,7 +69,7 @@ export function createHistoryCommand(
     .description("Show trading statistics")
     .option("--period <duration>", "Period (e.g. 7d, 30d)", "7d")
     .action((opts: { period: string }) => {
-      const days = parseInt(opts.period) || 7;
+      const days = parsePeriodDays(opts.period);
       const today = new Date();
       let totalPnl = 0;
 
@@ -80,7 +102,22 @@ export function createHistoryCommand(
           "id,date,market_type,via,symbol,side,type,amount,price,filled_amount,filled_price,status";
         const rows = orders.map(
           (o) =>
-            `${o.id},${o.created_at},${o.market_type},${o.via},${o.symbol},${o.side},${o.type},${o.amount},${o.price ?? ""},${o.filled_amount},${o.filled_price ?? ""},${o.status}`,
+            [
+              o.id,
+              o.created_at,
+              o.market_type,
+              o.via,
+              o.symbol,
+              o.side,
+              o.type,
+              o.amount,
+              o.price ?? "",
+              o.filled_amount,
+              o.filled_price ?? "",
+              o.status,
+            ]
+              .map(csvEscape)
+              .join(","),
         );
         const csv = [header, ...rows].join("\n");
         const filename = `trade-history-${new Date().toISOString().split("T")[0]}.csv`;

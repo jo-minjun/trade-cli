@@ -1,6 +1,10 @@
 import type { ExchangeRegistry } from "../exchanges/registry.js";
-import type { PositionRepository, OrderRepository } from "../db/repository.js";
-import type { RiskConfig } from "../config/types.js";
+import type {
+  PositionRepository,
+  OrderRepository,
+  DailyPnlRepository,
+} from "../db/repository.js";
+import type { RiskManager } from "../risk/manager.js";
 
 const CHECK_INTERVAL_MS = 30_000;
 
@@ -8,7 +12,9 @@ export interface MonitorContext {
   registry: ExchangeRegistry;
   positionRepo: PositionRepository;
   orderRepo: OrderRepository;
-  riskConfig: RiskConfig;
+  pnlRepo: DailyPnlRepository;
+  riskManager: RiskManager;
+  config: { stopLossPercent: number };
 }
 
 export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
@@ -19,11 +25,7 @@ export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
     try {
       const exchange = ctx.registry.get(pos.market_type, pos.via);
       const ticker = await exchange.getPrice(pos.symbol);
-      const stopLossRate =
-        ctx.riskConfig[
-          pos.market_type as "cex" | "stock" | "prediction"
-        ]?.["stop-loss"] ?? 0.05;
-      const stopPrice = pos.avg_entry_price * (1 - stopLossRate);
+      const stopPrice = pos.avg_entry_price * (1 - ctx.config.stopLossPercent);
 
       // Update current price in position
       ctx.positionRepo.upsert({
@@ -52,17 +54,31 @@ export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
           amount: pos.quantity,
           external_id: order.id,
         });
-        // Remove position after stop-loss sell
-        ctx.positionRepo.upsert({
-          market_type: pos.market_type,
-          via: pos.via,
-          symbol: pos.symbol,
-          quantity: 0,
-          avg_entry_price: 0,
-        });
-        actions.push(
-          `Stop-loss triggered: ${pos.symbol} (${pos.via}) sold ${pos.quantity} at ${ticker.price}`,
-        );
+
+        if (order.status === "filled" || order.status === "partially_filled") {
+          // Record PnL
+          const pnl =
+            (ticker.price - pos.avg_entry_price) * pos.quantity;
+          const today = new Date().toISOString().split("T")[0];
+          ctx.pnlRepo.record(today, pos.market_type, pos.via, pnl, false);
+          ctx.riskManager.recordLoss();
+
+          // Remove position after confirmed fill
+          ctx.positionRepo.upsert({
+            market_type: pos.market_type,
+            via: pos.via,
+            symbol: pos.symbol,
+            quantity: 0,
+            avg_entry_price: 0,
+          });
+          actions.push(
+            `Stop-loss triggered: ${pos.symbol} (${pos.via}) sold ${pos.quantity} at ${ticker.price}`,
+          );
+        } else {
+          actions.push(
+            `Stop-loss order pending: ${pos.symbol} (${pos.via}) order ${order.id} awaiting fill`,
+          );
+        }
       }
     } catch (err) {
       actions.push(`Error checking ${pos.symbol} (${pos.via}): ${err}`);

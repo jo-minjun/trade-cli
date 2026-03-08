@@ -9,7 +9,9 @@ describe("stock CLI", () => {
       check: vi.fn().mockReturnValue({ approved: true }),
     } as any;
     const mockOrderRepo = { create: vi.fn() } as any;
-    const cmd = createStockCommand(registry, mockRisk, mockOrderRepo);
+    const mockPositionRepo = { findBySymbol: vi.fn(), upsert: vi.fn() } as any;
+    const mockPnlRepo = { record: vi.fn() } as any;
+    const cmd = createStockCommand(registry, mockRisk, mockOrderRepo, mockPositionRepo, mockPnlRepo);
     expect(cmd.name()).toBe("stock");
     const subcommands = cmd.commands.map((c) => c.name());
     expect(subcommands).toContain("price");

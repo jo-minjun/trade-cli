@@ -2,12 +2,15 @@ import { Command } from "commander";
 import chalk from "chalk";
 import type { ExchangeRegistry } from "../exchanges/registry.js";
 import type { RiskManager } from "../risk/manager.js";
-import type { OrderRepository } from "../db/repository.js";
+import type { OrderRepository, PositionRepository, DailyPnlRepository } from "../db/repository.js";
+import { withErrorHandling, updatePositionAfterOrder } from "./helpers.js";
 
 export function createCexCommand(
   registry: ExchangeRegistry,
   riskManager: RiskManager,
   orderRepo: OrderRepository,
+  positionRepo: PositionRepository,
+  pnlRepo: DailyPnlRepository,
 ): Command {
   const cmd = new Command("cex").description("CEX (crypto exchange) commands");
 
@@ -16,7 +19,7 @@ export function createCexCommand(
     .description("Get current price")
     .argument("<symbol>", "Trading pair (e.g. BTC-KRW)")
     .option("--via <exchange>", "Exchange to use", "upbit")
-    .action(async (symbol: string, opts: { via: string }) => {
+    .action(withErrorHandling(async (symbol: string, opts: { via: string }) => {
       const exchange = registry.get("cex", opts.via);
       const ticker = await exchange.getPrice(symbol);
       console.log(chalk.bold(ticker.symbol));
@@ -28,14 +31,14 @@ export function createCexCommand(
       console.log(
         `  24h High/Low: ${ticker.high24h.toLocaleString()} / ${ticker.low24h.toLocaleString()}`,
       );
-    });
+    }));
 
   cmd
     .command("orderbook")
     .description("Get order book")
     .argument("<symbol>", "Trading pair")
     .option("--via <exchange>", "Exchange to use", "upbit")
-    .action(async (symbol: string, opts: { via: string }) => {
+    .action(withErrorHandling(async (symbol: string, opts: { via: string }) => {
       const exchange = registry.get("cex", opts.via);
       const ob = await exchange.getOrderbook(symbol);
       console.log(chalk.bold(`${ob.symbol} Order Book`));
@@ -51,7 +54,7 @@ export function createCexCommand(
         .forEach((b) =>
           console.log(`    ${b.price.toLocaleString()} | ${b.size}`),
         );
-    });
+    }));
 
   cmd
     .command("candles")
@@ -61,7 +64,7 @@ export function createCexCommand(
     .option("--interval <interval>", "Candle interval", "1h")
     .option("--count <count>", "Number of candles", "10")
     .action(
-      async (
+      withErrorHandling(async (
         symbol: string,
         opts: { via: string; interval: string; count: string },
       ) => {
@@ -78,14 +81,14 @@ export function createCexCommand(
             `  ${date} | O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`,
           );
         });
-      },
+      }),
     );
 
   cmd
     .command("balance")
     .description("Get account balance")
     .option("--via <exchange>", "Exchange to use", "upbit")
-    .action(async (opts: { via: string }) => {
+    .action(withErrorHandling(async (opts: { via: string }) => {
       const exchange = registry.get("cex", opts.via);
       const balances = await exchange.getBalance();
       console.log(chalk.bold("Balances:"));
@@ -94,7 +97,7 @@ export function createCexCommand(
           `  ${b.currency}: ${b.available} (locked: ${b.locked})${b.avgBuyPrice ? ` avg: ${b.avgBuyPrice}` : ""}`,
         );
       });
-    });
+    }));
 
   cmd
     .command("buy")
@@ -105,7 +108,7 @@ export function createCexCommand(
     .option("--type <type>", "Order type", "market")
     .option("--price <price>", "Limit price")
     .action(
-      async (
+      withErrorHandling(async (
         symbol: string,
         amount: string,
         opts: { via: string; type: string; price?: string },
@@ -141,11 +144,12 @@ export function createCexCommand(
           price: opts.price ? parseFloat(opts.price) : undefined,
           external_id: order.id,
         });
+        updatePositionAfterOrder("buy", "cex", opts.via, symbol, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
         console.log(
           `  ${order.side} ${order.symbol} | ${order.type} | amount: ${order.amount}`,
         );
-      },
+      }),
     );
 
   cmd
@@ -157,7 +161,7 @@ export function createCexCommand(
     .option("--type <type>", "Order type", "market")
     .option("--price <price>", "Limit price")
     .action(
-      async (
+      withErrorHandling(async (
         symbol: string,
         amount: string,
         opts: { via: string; type: string; price?: string },
@@ -193,8 +197,9 @@ export function createCexCommand(
           price: opts.price ? parseFloat(opts.price) : undefined,
           external_id: order.id,
         });
+        updatePositionAfterOrder("sell", "cex", opts.via, symbol, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
-      },
+      }),
     );
 
   cmd
@@ -202,11 +207,13 @@ export function createCexCommand(
     .description("Cancel an order")
     .argument("<order-id>", "Order ID to cancel")
     .option("--via <exchange>", "Exchange to use", "upbit")
-    .action(async (orderId: string, opts: { via: string }) => {
+    .action(withErrorHandling(async (orderId: string, opts: { via: string }) => {
       const exchange = registry.get("cex", opts.via);
       const result = await exchange.cancelOrder(orderId);
+      // TODO: look up internal order by external_id and update status to 'cancelled'.
+      // OrderRepository does not yet have findByExternalId, so this is a known limitation.
       console.log(chalk.green("Order cancelled:"), result.id);
-    });
+    }));
 
   return cmd;
 }

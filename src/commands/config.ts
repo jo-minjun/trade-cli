@@ -30,12 +30,19 @@ function maskSecrets(
   return result;
 }
 
+const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 function setNestedValue(
   obj: Record<string, unknown>,
   path: string,
   value: unknown,
 ): void {
   const keys = path.split(".");
+  for (const key of keys) {
+    if (BLOCKED_KEYS.has(key)) {
+      throw new Error(`Invalid config key: ${key}`);
+    }
+  }
   let current = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     if (typeof current[keys[i]] !== "object" || current[keys[i]] === null) {

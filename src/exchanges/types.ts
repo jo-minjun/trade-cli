@@ -69,3 +69,56 @@ export interface Exchange {
   getOrder(orderId: string): Promise<OrderResponse>;
   getOpenOrders(symbol?: string): Promise<OrderResponse[]>;
 }
+
+export interface StockInfo {
+  symbol: string;
+  name: string;
+  market: string;
+  per?: number;
+  pbr?: number;
+  marketCap?: number;
+}
+
+export interface StockExchange extends Exchange {
+  getStockInfo(symbol: string): Promise<StockInfo>;
+}
+
+export function isStockExchange(e: Exchange): e is StockExchange {
+  return typeof (e as StockExchange).getStockInfo === "function";
+}
+
+export interface PredictionMarket {
+  id: string;
+  question: string;
+  description: string;
+  outcomes: string[];
+  volume: number;
+  liquidity: number;
+  endDate: string;
+}
+
+export interface PredictionMarketDetail extends PredictionMarket {
+  tokens: { outcome: string; tokenId: string; price: number }[];
+}
+
+export interface PredictionPosition {
+  marketId: string;
+  outcome: string;
+  size: number;
+  avgPrice: number;
+  currentPrice: number;
+}
+
+export interface PredictionExchange extends Exchange {
+  searchMarkets(query: string): Promise<PredictionMarket[]>;
+  getMarket(marketId: string): Promise<PredictionMarketDetail>;
+  getPositions(): Promise<PredictionPosition[]>;
+}
+
+export function isPredictionExchange(e: Exchange): e is PredictionExchange {
+  return (
+    typeof (e as PredictionExchange).searchMarkets === "function" &&
+    typeof (e as PredictionExchange).getMarket === "function" &&
+    typeof (e as PredictionExchange).getPositions === "function"
+  );
+}

@@ -2,12 +2,16 @@ import { Command } from "commander";
 import chalk from "chalk";
 import type { ExchangeRegistry } from "../exchanges/registry.js";
 import type { RiskManager } from "../risk/manager.js";
-import type { OrderRepository } from "../db/repository.js";
+import type { OrderRepository, PositionRepository, DailyPnlRepository } from "../db/repository.js";
+import { isStockExchange } from "../exchanges/types.js";
+import { withErrorHandling, updatePositionAfterOrder } from "./helpers.js";
 
 export function createStockCommand(
   registry: ExchangeRegistry,
   riskManager: RiskManager,
   orderRepo: OrderRepository,
+  positionRepo: PositionRepository,
+  pnlRepo: DailyPnlRepository,
 ): Command {
   const cmd = new Command("stock").description("Stock trading commands");
 
@@ -16,7 +20,7 @@ export function createStockCommand(
     .description("Get current stock price")
     .argument("<symbol>", "Stock code (e.g. 005930)")
     .option("--via <broker>", "Broker to use", "kis")
-    .action(async (symbol: string, opts: { via: string }) => {
+    .action(withErrorHandling(async (symbol: string, opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       const ticker = await exchange.getPrice(symbol);
       console.log(chalk.bold(ticker.symbol));
@@ -25,13 +29,13 @@ export function createStockCommand(
         `  Change: ${ticker.change >= 0 ? chalk.green("+" + ticker.change) : chalk.red(ticker.change)} (${(ticker.changeRate * 100).toFixed(2)}%)`,
       );
       console.log(`  Volume: ${ticker.volume24h.toLocaleString()}`);
-    });
+    }));
 
   cmd
     .command("balance")
     .description("Get account balance")
     .option("--via <broker>", "Broker to use", "kis")
-    .action(async (opts: { via: string }) => {
+    .action(withErrorHandling(async (opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       const balances = await exchange.getBalance();
       console.log(chalk.bold("Holdings:"));
@@ -40,7 +44,7 @@ export function createStockCommand(
           `  ${b.currency}: ${b.available} shares (locked: ${b.locked})${b.avgBuyPrice ? ` avg: ${b.avgBuyPrice}` : ""}`,
         );
       });
-    });
+    }));
 
   cmd
     .command("buy")
@@ -51,7 +55,7 @@ export function createStockCommand(
     .option("--type <type>", "Order type", "market")
     .option("--price <price>", "Limit price")
     .action(
-      async (
+      withErrorHandling(async (
         symbol: string,
         amount: string,
         opts: { via: string; type: string; price?: string },
@@ -97,8 +101,9 @@ export function createStockCommand(
           price: opts.price ? parseFloat(opts.price) : undefined,
           external_id: order.id,
         });
+        updatePositionAfterOrder("buy", "stock", opts.via, symbol, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
-      },
+      }),
     );
 
   cmd
@@ -110,7 +115,7 @@ export function createStockCommand(
     .option("--type <type>", "Order type", "market")
     .option("--price <price>", "Limit price")
     .action(
-      async (
+      withErrorHandling(async (
         symbol: string,
         amount: string,
         opts: { via: string; type: string; price?: string },
@@ -146,8 +151,9 @@ export function createStockCommand(
           price: opts.price ? parseFloat(opts.price) : undefined,
           external_id: order.id,
         });
+        updatePositionAfterOrder("sell", "stock", opts.via, symbol, order, positionRepo, pnlRepo);
         console.log(chalk.green("Order placed:"), order.id);
-      },
+      }),
     );
 
   cmd
@@ -155,20 +161,22 @@ export function createStockCommand(
     .description("Cancel an order")
     .argument("<order-id>", "Order ID")
     .option("--via <broker>", "Broker to use", "kis")
-    .action(async (orderId: string, opts: { via: string }) => {
+    .action(withErrorHandling(async (orderId: string, opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       const result = await exchange.cancelOrder(orderId);
+      // TODO: look up internal order by external_id and update status to 'cancelled'.
+      // OrderRepository does not yet have findByExternalId, so this is a known limitation.
       console.log(chalk.green("Order cancelled:"), result.id);
-    });
+    }));
 
   cmd
     .command("info")
     .description("Get stock info")
     .argument("<symbol>", "Stock code")
     .option("--via <broker>", "Broker to use", "kis")
-    .action(async (symbol: string, opts: { via: string }) => {
-      const exchange = registry.get("stock", opts.via) as any;
-      if (typeof exchange.getStockInfo !== "function") {
+    .action(withErrorHandling(async (symbol: string, opts: { via: string }) => {
+      const exchange = registry.get("stock", opts.via);
+      if (!isStockExchange(exchange)) {
         console.log(chalk.red("Stock info not supported by"), opts.via);
         return;
       }
@@ -179,7 +187,7 @@ export function createStockCommand(
       if (info.pbr) console.log(`  PBR: ${info.pbr}`);
       if (info.marketCap)
         console.log(`  Market Cap: ${info.marketCap.toLocaleString()}`);
-    });
+    }));
 
   return cmd;
 }

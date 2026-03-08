@@ -51,7 +51,7 @@ export function loadConfig(configDir?: string): TradeConfig {
 
 export function saveConfig(config: TradeConfig, configDir?: string): void {
   const dir = configDir ?? getConfigDir();
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = join(dir, "config.yaml");
-  writeFileSync(filePath, stringify(config));
+  writeFileSync(filePath, stringify(config), { mode: 0o600 });
 }

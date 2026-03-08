@@ -3,6 +3,14 @@ import chalk from "chalk";
 import type { RiskManager } from "../risk/manager.js";
 import { loadConfig, saveConfig } from "../config/loader.js";
 
+const ALLOWED_RISK_KEYS = [
+  "max-total-capital",
+  "max-daily-loss",
+  "max-order-size",
+  "max-total-exposure",
+  "max-position-ratio",
+];
+
 export function createRiskCommand(riskManager: RiskManager): Command {
   const cmd = new Command("risk").description("Risk management commands");
 
@@ -73,15 +81,21 @@ export function createRiskCommand(riskManager: RiskManager): Command {
     .argument("<key>", "Risk key (e.g. max-order-size)")
     .argument("<value>", "Value")
     .action((key: string, value: string) => {
+      if (!ALLOWED_RISK_KEYS.includes(key)) {
+        console.log(chalk.red(`Invalid risk key: ${key}`));
+        console.log(`Allowed keys: ${ALLOWED_RISK_KEYS.join(", ")}`);
+        return;
+      }
       const config = loadConfig();
       const numValue = Number(value);
-      if (isNaN(numValue)) {
-        console.log(chalk.red("Value must be a number"));
+      if (isNaN(numValue) || numValue <= 0) {
+        console.log(chalk.red("Value must be a positive number"));
         return;
       }
       (config.risk as any)[key] = numValue;
       saveConfig(config);
       console.log(chalk.green("Updated risk.") + key, "=", numValue);
+      console.log(chalk.yellow("Note: Changes take effect on next CLI invocation."));
     });
 
   cmd

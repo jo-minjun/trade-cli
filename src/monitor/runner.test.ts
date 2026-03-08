@@ -2,19 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 import { checkStopLoss } from "./runner.js";
 import type { MonitorContext } from "./runner.js";
 
-function createRiskConfig(overrides?: Record<string, unknown>) {
-  return {
-    "max-total-capital": 1000000,
-    "max-daily-loss": 50000,
-    "max-total-exposure": 0.8,
-    "max-order-size": 200000,
-    "max-position-ratio": 0.3,
-    "circuit-breaker": { "consecutive-losses": 5, "cooldown-minutes": 60 },
-    cex: { "max-allocation": 400000, "stop-loss": 0.05 },
-    stock: { "max-allocation": 400000, "stop-loss": 0.03 },
-    prediction: { "max-allocation": 200000, "stop-loss": 0.1 },
-    ...overrides,
-  };
+function createMockPnlRepo() {
+  return { record: vi.fn() };
+}
+
+function createMockRiskManager() {
+  return { recordLoss: vi.fn(), recordWin: vi.fn() };
 }
 
 describe("Stop-loss monitor", () => {
@@ -22,7 +15,9 @@ describe("Stop-loss monitor", () => {
     const mockExchange = {
       name: "upbit",
       getPrice: vi.fn().mockResolvedValue({ price: 95000, symbol: "BTC-KRW" }),
-      placeOrder: vi.fn().mockResolvedValue({ id: "sl-001" }),
+      placeOrder: vi
+        .fn()
+        .mockResolvedValue({ id: "sl-001", status: "filled" }),
     };
     const mockRegistry = {
       get: vi.fn().mockReturnValue(mockExchange),
@@ -42,12 +37,16 @@ describe("Stop-loss monitor", () => {
       upsert: vi.fn(),
     };
     const mockOrderRepo = { create: vi.fn() };
+    const mockPnlRepo = createMockPnlRepo();
+    const mockRiskManager = createMockRiskManager();
 
     const ctx: MonitorContext = {
       registry: mockRegistry as any,
       positionRepo: mockPositionRepo as any,
       orderRepo: mockOrderRepo as any,
-      riskConfig: createRiskConfig() as any,
+      pnlRepo: mockPnlRepo as any,
+      riskManager: mockRiskManager as any,
+      config: { stopLossPercent: 0.05 },
     };
 
     const actions = await checkStopLoss(ctx);
@@ -93,7 +92,9 @@ describe("Stop-loss monitor", () => {
       registry: mockRegistry as any,
       positionRepo: mockPositionRepo as any,
       orderRepo: { create: vi.fn() } as any,
-      riskConfig: createRiskConfig() as any,
+      pnlRepo: createMockPnlRepo() as any,
+      riskManager: createMockRiskManager() as any,
+      config: { stopLossPercent: 0.05 },
     };
 
     const actions = await checkStopLoss(ctx);
@@ -132,7 +133,9 @@ describe("Stop-loss monitor", () => {
       registry: mockRegistry as any,
       positionRepo: mockPositionRepo as any,
       orderRepo: { create: vi.fn() } as any,
-      riskConfig: createRiskConfig() as any,
+      pnlRepo: createMockPnlRepo() as any,
+      riskManager: createMockRiskManager() as any,
+      config: { stopLossPercent: 0.05 },
     };
 
     const actions = await checkStopLoss(ctx);
@@ -142,12 +145,14 @@ describe("Stop-loss monitor", () => {
     expect(actions[0]).toContain("Exchange not found");
   });
 
-  it("uses default 5% stop-loss when market type is unknown", async () => {
+  it("uses default stop-loss percent from config", async () => {
     const mockExchange = {
       name: "test",
       // Price is exactly at 5% below entry (95000), should trigger
       getPrice: vi.fn().mockResolvedValue({ price: 95000, symbol: "TEST" }),
-      placeOrder: vi.fn().mockResolvedValue({ id: "sl-002" }),
+      placeOrder: vi
+        .fn()
+        .mockResolvedValue({ id: "sl-002", status: "filled" }),
     };
     const mockRegistry = { get: vi.fn().mockReturnValue(mockExchange) };
     const mockPositionRepo = {
@@ -168,7 +173,9 @@ describe("Stop-loss monitor", () => {
       registry: mockRegistry as any,
       positionRepo: mockPositionRepo as any,
       orderRepo: mockOrderRepo as any,
-      riskConfig: createRiskConfig() as any,
+      pnlRepo: createMockPnlRepo() as any,
+      riskManager: createMockRiskManager() as any,
+      config: { stopLossPercent: 0.05 },
     };
 
     const actions = await checkStopLoss(ctx);
@@ -188,11 +195,116 @@ describe("Stop-loss monitor", () => {
       registry: { get: vi.fn() } as any,
       positionRepo: mockPositionRepo as any,
       orderRepo: { create: vi.fn() } as any,
-      riskConfig: createRiskConfig() as any,
+      pnlRepo: createMockPnlRepo() as any,
+      riskManager: createMockRiskManager() as any,
+      config: { stopLossPercent: 0.05 },
     };
 
     const actions = await checkStopLoss(ctx);
 
     expect(actions).toHaveLength(0);
+  });
+
+  it("records PnL after stop-loss execution", async () => {
+    const mockExchange = {
+      name: "upbit",
+      getPrice: vi.fn().mockResolvedValue({ price: 89000, symbol: "BTC-KRW" }),
+      placeOrder: vi
+        .fn()
+        .mockResolvedValue({ id: "sl-pnl-001", status: "filled" }),
+    };
+    const mockRegistry = { get: vi.fn().mockReturnValue(mockExchange) };
+    const mockPositionRepo = {
+      listAll: vi.fn().mockReturnValue([
+        {
+          market_type: "cex",
+          via: "upbit",
+          symbol: "BTC-KRW",
+          quantity: 0.5,
+          avg_entry_price: 100000,
+        },
+      ]),
+      upsert: vi.fn(),
+    };
+    const mockOrderRepo = { create: vi.fn() };
+    const mockPnlRepo = createMockPnlRepo();
+    const mockRiskManager = createMockRiskManager();
+
+    const ctx: MonitorContext = {
+      registry: mockRegistry as any,
+      positionRepo: mockPositionRepo as any,
+      orderRepo: mockOrderRepo as any,
+      pnlRepo: mockPnlRepo as any,
+      riskManager: mockRiskManager as any,
+      config: { stopLossPercent: 0.1 },
+    };
+
+    await checkStopLoss(ctx);
+
+    // stopPrice = 100000 * (1 - 0.1) = 90000, price 89000 <= 90000 triggers
+    // PnL = (89000 - 100000) * 0.5 = -5500
+    const expectedPnl = (89000 - 100000) * 0.5;
+    const today = new Date().toISOString().split("T")[0];
+    expect(mockPnlRepo.record).toHaveBeenCalledWith(
+      today,
+      "cex",
+      "upbit",
+      expectedPnl,
+      false,
+    );
+    expect(mockRiskManager.recordLoss).toHaveBeenCalledOnce();
+  });
+
+  it("does not delete position when order is pending", async () => {
+    const mockExchange = {
+      name: "upbit",
+      getPrice: vi.fn().mockResolvedValue({ price: 90000, symbol: "BTC-KRW" }),
+      placeOrder: vi
+        .fn()
+        .mockResolvedValue({ id: "sl-pending-001", status: "pending" }),
+    };
+    const mockRegistry = { get: vi.fn().mockReturnValue(mockExchange) };
+    const mockPositionRepo = {
+      listAll: vi.fn().mockReturnValue([
+        {
+          market_type: "cex",
+          via: "upbit",
+          symbol: "BTC-KRW",
+          quantity: 0.01,
+          avg_entry_price: 100000,
+        },
+      ]),
+      upsert: vi.fn(),
+    };
+    const mockOrderRepo = { create: vi.fn() };
+    const mockPnlRepo = createMockPnlRepo();
+    const mockRiskManager = createMockRiskManager();
+
+    const ctx: MonitorContext = {
+      registry: mockRegistry as any,
+      positionRepo: mockPositionRepo as any,
+      orderRepo: mockOrderRepo as any,
+      pnlRepo: mockPnlRepo as any,
+      riskManager: mockRiskManager as any,
+      config: { stopLossPercent: 0.05 },
+    };
+
+    const actions = await checkStopLoss(ctx);
+
+    // Order was placed but is pending
+    expect(mockExchange.placeOrder).toHaveBeenCalled();
+    expect(mockOrderRepo.create).toHaveBeenCalled();
+
+    // Position should NOT be zeroed out (only 1 upsert for price update)
+    expect(mockPositionRepo.upsert).toHaveBeenCalledTimes(1);
+
+    // PnL should NOT be recorded
+    expect(mockPnlRepo.record).not.toHaveBeenCalled();
+    expect(mockRiskManager.recordLoss).not.toHaveBeenCalled();
+
+    // Action message should indicate pending
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toContain("pending");
+    expect(actions[0]).toContain("sl-pending-001");
   });
 });

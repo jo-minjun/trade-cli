@@ -48,9 +48,9 @@ program
   .version("0.1.0");
 
 program.addCommand(createConfigCommand());
-program.addCommand(createCexCommand(registry, riskManager, orderRepo));
-program.addCommand(createStockCommand(registry, riskManager, orderRepo));
-program.addCommand(createPredictionCommand(registry, riskManager, orderRepo));
+program.addCommand(createCexCommand(registry, riskManager, orderRepo, positionRepo, pnlRepo));
+program.addCommand(createStockCommand(registry, riskManager, orderRepo, positionRepo, pnlRepo));
+program.addCommand(createPredictionCommand(registry, riskManager, orderRepo, positionRepo, pnlRepo));
 program.addCommand(createRiskCommand(riskManager));
 program.addCommand(createPositionCommand(positionRepo));
 program.addCommand(createHistoryCommand(orderRepo, pnlRepo));
