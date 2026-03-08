@@ -14,6 +14,7 @@ import { createPredictionCommand } from "./commands/prediction.js";
 import { createRiskCommand } from "./commands/risk.js";
 import { createPositionCommand } from "./commands/position.js";
 import { createHistoryCommand } from "./commands/history.js";
+import { createMonitorCommand } from "./commands/monitor.js";
 
 const config = loadConfig();
 const db = openDatabase();
@@ -53,5 +54,6 @@ program.addCommand(createPredictionCommand(registry, riskManager, orderRepo));
 program.addCommand(createRiskCommand(riskManager));
 program.addCommand(createPositionCommand(positionRepo));
 program.addCommand(createHistoryCommand(orderRepo, pnlRepo));
+program.addCommand(createMonitorCommand());
 
 program.parse();
