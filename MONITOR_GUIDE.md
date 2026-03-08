@@ -55,6 +55,58 @@ monitor:
 ./trade monitor start
 ```
 
+### Stop-Loss Hook
+
+You can configure an optional shell script that runs whenever a stop-loss sell is executed. The script receives trade details as JSON via stdin, so you can integrate any notification system (Slack, Discord, etc.).
+
+```bash
+# Set the hook script path
+./trade config set monitor.on-stop-loss-hook ~/.trade-cli/hooks/on-stop-loss.sh
+```
+
+The corresponding `config.yaml` section:
+
+```yaml
+monitor:
+  interval-seconds: 30
+  on-stop-loss-hook: ~/.trade-cli/hooks/on-stop-loss.sh
+```
+
+**Example hook script:**
+
+```bash
+#!/bin/bash
+# ~/.trade-cli/hooks/on-stop-loss.sh
+# Reads JSON from stdin and sends a Slack notification
+
+read -r payload
+symbol=$(echo "$payload" | jq -r '.symbol')
+pnl=$(echo "$payload" | jq -r '.realized_pnl')
+price=$(echo "$payload" | jq -r '.execution_price')
+
+curl -s -X POST "$SLACK_WEBHOOK_URL" \
+  -H 'Content-Type: application/json' \
+  -d "{\"text\": \"🔻 Stop-loss triggered: ${symbol} sold at ${price} (PnL: ${pnl})\"}"
+```
+
+**JSON payload fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event` | string | Always `"stop-loss"` |
+| `timestamp` | string | ISO 8601 timestamp |
+| `symbol` | string | Trading pair (e.g. `BTC-KRW`) |
+| `market_type` | string | `cex`, `stock`, or `prediction` |
+| `side` | string | Always `"sell"` |
+| `quantity` | number | Quantity sold |
+| `entry_price` | number | Average entry price |
+| `stop_price` | number | Stop-loss threshold price |
+| `execution_price` | number | Actual sell price |
+| `realized_pnl` | number | Realized profit/loss |
+| `order_id` | string | Exchange order ID |
+
+> **Note:** The hook runs asynchronously (fire-and-forget). Failures do not affect the monitor. Make sure the script is executable (`chmod +x`).
+
 ## Commands
 
 | Command | Description |
@@ -90,7 +142,7 @@ Each check cycle runs the following steps for every open position:
 2. **Update position** with latest price and unrealized PnL
 3. **Compare** current price against stop-loss threshold (`entry_price × (1 - stop-loss%)`)
 4. **If triggered:** place a market sell order for the full position
-5. **If filled:** record realized PnL and notify the risk manager (may activate circuit breaker)
+5. **If filled:** record realized PnL, notify the risk manager (may activate circuit breaker), and run the stop-loss hook if configured
 
 Individual position errors (e.g., exchange timeout) are logged but do not stop the monitor from checking other positions.
 

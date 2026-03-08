@@ -143,6 +143,7 @@ export function createMonitorCommand(): Command {
         riskManager,
         riskConfig: config.risk,
         intervalMs: config.monitor["interval-seconds"] * 1000,
+        onStopLossHook: config.monitor["on-stop-loss-hook"] || undefined,
       });
     });
 

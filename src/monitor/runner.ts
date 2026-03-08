@@ -6,6 +6,7 @@ import type {
 } from "../db/repository.js";
 import type { RiskManager } from "../risk/manager.js";
 import type { RiskConfig } from "../config/types.js";
+import { executeStopLossHook, type StopLossHookPayload } from "./hooks.js";
 
 const DEFAULT_INTERVAL_MS = 30_000;
 
@@ -17,6 +18,7 @@ export interface MonitorContext {
   riskManager: RiskManager;
   riskConfig: RiskConfig;
   intervalMs?: number;
+  onStopLossHook?: string;
 }
 
 export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
@@ -79,6 +81,23 @@ export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
           actions.push(
             `Stop-loss triggered: ${pos.symbol} (${pos.via}) sold ${soldQty} at ${sellPrice}`,
           );
+
+          if (ctx.onStopLossHook) {
+            const hookPayload: StopLossHookPayload = {
+              event: "stop-loss",
+              timestamp: new Date().toISOString(),
+              symbol: pos.symbol,
+              market_type: pos.market_type,
+              side: "sell",
+              quantity: soldQty,
+              entry_price: pos.avg_entry_price,
+              stop_price: stopPrice,
+              execution_price: sellPrice,
+              realized_pnl: pnl,
+              order_id: order.id,
+            };
+            executeStopLossHook(ctx.onStopLossHook, hookPayload);
+          }
         } else {
           actions.push(
             `Stop-loss order pending: ${pos.symbol} (${pos.via}) order ${order.id} awaiting fill`,

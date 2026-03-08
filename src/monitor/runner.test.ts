@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import { checkStopLoss } from "./runner.js";
 import type { MonitorContext } from "./runner.js";
 import type { RiskConfig } from "../config/types.js";
+import { executeStopLossHook } from "./hooks.js";
+vi.mock("./hooks.js", () => ({
+  executeStopLossHook: vi.fn(),
+}));
+const mockExecuteHook = vi.mocked(executeStopLossHook);
 
 function mockRiskConfig(stopLoss: number): RiskConfig {
   return {
@@ -321,5 +326,82 @@ describe("Stop-loss monitor", () => {
     expect(actions).toHaveLength(1);
     expect(actions[0]).toContain("pending");
     expect(actions[0]).toContain("sl-pending-001");
+  });
+
+  function createHookTestCtx(
+    orderResult: { id: string; status: string; filledPrice?: number; filledAmount?: number },
+    overrides: Partial<MonitorContext> = {},
+  ): MonitorContext {
+    const mockExchange = {
+      name: "upbit",
+      getPrice: vi.fn().mockResolvedValue({ price: 90000, symbol: "BTC-KRW" }),
+      placeOrder: vi.fn().mockResolvedValue(orderResult),
+    };
+    const mockRegistry = { get: vi.fn().mockReturnValue(mockExchange) };
+    const mockPositionRepo = {
+      listAll: vi.fn().mockReturnValue([
+        {
+          market_type: "cex",
+          via: "upbit",
+          symbol: "BTC-KRW",
+          quantity: 0.01,
+          avg_entry_price: 100000,
+        },
+      ]),
+      upsert: vi.fn(),
+    };
+
+    return {
+      registry: mockRegistry as any,
+      positionRepo: mockPositionRepo as any,
+      orderRepo: { create: vi.fn() } as any,
+      pnlRepo: createMockPnlRepo() as any,
+      riskManager: createMockRiskManager() as any,
+      riskConfig: mockRiskConfig(0.05),
+      ...overrides,
+    };
+  }
+
+  it("calls stop-loss hook when configured and order is filled", async () => {
+    mockExecuteHook.mockClear();
+    const ctx = createHookTestCtx(
+      { id: "sl-hook-001", status: "filled", filledPrice: 90000, filledAmount: 0.01 },
+      { onStopLossHook: "~/hooks/on-stop-loss.sh" },
+    );
+
+    await checkStopLoss(ctx);
+
+    expect(mockExecuteHook).toHaveBeenCalledOnce();
+    expect(mockExecuteHook).toHaveBeenCalledWith(
+      "~/hooks/on-stop-loss.sh",
+      expect.objectContaining({
+        event: "stop-loss",
+        symbol: "BTC-KRW",
+        market_type: "cex",
+        side: "sell",
+        order_id: "sl-hook-001",
+      }),
+    );
+  });
+
+  it("does not call hook when on-stop-loss-hook is not configured", async () => {
+    mockExecuteHook.mockClear();
+    const ctx = createHookTestCtx({ id: "sl-no-hook", status: "filled" });
+
+    await checkStopLoss(ctx);
+
+    expect(mockExecuteHook).not.toHaveBeenCalled();
+  });
+
+  it("does not call hook when order is pending", async () => {
+    mockExecuteHook.mockClear();
+    const ctx = createHookTestCtx(
+      { id: "sl-pending", status: "pending" },
+      { onStopLossHook: "~/hooks/on-stop-loss.sh" },
+    );
+
+    await checkStopLoss(ctx);
+
+    expect(mockExecuteHook).not.toHaveBeenCalled();
   });
 });

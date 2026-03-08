@@ -41,6 +41,7 @@ export interface RiskConfig {
 
 export interface MonitorConfig {
   "interval-seconds": number;
+  "on-stop-loss-hook"?: string;
 }
 
 export interface TradeConfig {
