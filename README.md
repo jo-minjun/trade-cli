@@ -49,6 +49,7 @@ chmod +x trade
 ## Guides
 
 - [CEX (Crypto Exchange) Guide](CEX_GUIDE.md) — Upbit setup, market data, trading
+- [Stop-Loss Monitor Guide](MONITOR_GUIDE.md) — Background daemon for automatic stop-loss
 
 ## Risk Management
 
@@ -85,23 +86,7 @@ Activates after consecutive losses (default: 5), blocking all buy orders for a c
 
 ## Stop-Loss Monitor
 
-> **Note:** macOS only (uses LaunchAgent).
-
-Background daemon that checks positions every 30 seconds and auto-sells when price drops below the stop-loss threshold. Stop-loss percentages are configured per market type:
-
-| Market | Default Stop-Loss | Config Key |
-|--------|------------------|------------|
-| CEX | 5% | `risk.cex.stop-loss` |
-| Stock | 3% | `risk.stock.stop-loss` |
-| Prediction | 10% | `risk.prediction.stop-loss` |
-
-```bash
-./trade monitor install    # Install and start LaunchAgent
-./trade monitor status     # Check daemon status
-./trade monitor stop       # Stop daemon
-./trade monitor start      # Restart daemon
-./trade monitor uninstall  # Remove LaunchAgent
-```
+Background daemon that auto-sells positions when prices drop below stop-loss thresholds. See the [Stop-Loss Monitor Guide](MONITOR_GUIDE.md) for setup, configuration, and details.
 
 ## Configuration
 
