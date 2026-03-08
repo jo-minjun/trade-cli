@@ -1,10 +1,18 @@
-# Stop-Loss Hook Design
+# Stop-Loss Hook Implementation Plan
 
-## Summary
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-Add an optional shell script hook that fires (fire-and-forget) when the monitor executes a stop-loss sell. The hook receives trade details as JSON via stdin, allowing users to integrate any external notification (Slack, Discord, SQLite, etc.) without trade-cli needing to know about them.
+**Goal:** Add a fire-and-forget shell script hook that executes when the monitor triggers a stop-loss sell, passing trade details as JSON via stdin.
 
-## Config
+**Architecture:** New `src/monitor/hooks.ts` module handles hook execution (spawn, JSON pipe, error logging). `runner.ts` calls it after a filled stop-loss sell. Config adds optional `on-stop-loss-hook` to `MonitorConfig`.
+
+**Tech Stack:** Node.js `child_process.spawn`, vitest for testing.
+
+---
+
+## Design
+
+### Config
 
 ```yaml
 monitor:
@@ -14,9 +22,8 @@ monitor:
 
 - Set via: `trade config set monitor.on-stop-loss-hook <path>`
 - Unset via: `trade config set monitor.on-stop-loss-hook ""`
-- No CLI changes needed — existing `config set` supports this out of the box.
 
-## JSON Payload (stdin)
+### JSON Payload (stdin)
 
 ```json
 {
@@ -34,39 +41,491 @@ monitor:
 }
 ```
 
-## Module Structure
+---
 
-### `src/monitor/hooks.ts` (new)
+## Task 1: Add `on-stop-loss-hook` to config types
 
-- `StopLossHookPayload` interface — typed JSON payload
-- `executeStopLossHook(hookPath: string, payload: StopLossHookPayload): void`
-  - Resolves `~` in path
-  - `spawn(hookPath, [], { stdio: ['pipe', 'ignore', 'pipe'], detached: true })`
-  - Writes JSON to stdin, calls `child.unref()`
-  - Logs errors to stderr, never throws
+**Files:**
+- Modify: `src/config/types.ts:42-44`
 
-### `src/monitor/runner.ts` (modified)
+**Step 1: Add optional field to MonitorConfig**
 
-- After successful stop-loss sell (filled), if `config.monitor['on-stop-loss-hook']` is set, call `executeStopLossHook()` with the trade payload.
-- Hook execution is non-blocking — does not affect the monitor loop.
+In `src/config/types.ts`, change:
 
-### `src/config/types.ts` (modified)
+```typescript
+export interface MonitorConfig {
+  "interval-seconds": number;
+}
+```
 
-- Add `'on-stop-loss-hook'?: string` to `MonitorConfig`.
+to:
 
-## Execution Model
+```typescript
+export interface MonitorConfig {
+  "interval-seconds": number;
+  "on-stop-loss-hook"?: string;
+}
+```
 
-- **Fire-and-forget**: `detached: true` + `child.unref()` — parent does not wait.
-- **Trigger condition**: Only on filled sell orders. Pending orders do not trigger.
-- **Error handling**: `spawn` error and stderr are logged via `console.error`. No retries, no throws.
+No changes needed in `src/config/defaults.ts` — the field is optional and `deepMerge` handles undefined.
 
-## Constraints
+**Step 2: Verify build**
 
-- `spawn` does not expand `~` — must resolve manually via `os.homedir()`.
-- User is responsible for `chmod +x` on the hook script.
-- No timeout management — hook process lifetime is outside trade-cli's scope.
+Run: `pnpm build`
+Expected: SUCCESS, no type errors.
 
-## Testing
+**Step 3: Commit**
 
-- `hooks.ts`: Unit test with spawn mock — verify JSON payload correctness, verify no throw on error.
-- `runner.ts`: Add test verifying hook is called on filled stop-loss, not called when hook is unset.
+```bash
+git add src/config/types.ts
+git commit -m "feat: add on-stop-loss-hook to MonitorConfig type"
+```
+
+---
+
+## Task 2: Create `src/monitor/hooks.ts` with tests (TDD)
+
+**Files:**
+- Create: `src/monitor/hooks.ts`
+- Create: `src/monitor/hooks.test.ts`
+
+**Step 1: Write failing tests**
+
+Create `src/monitor/hooks.test.ts`:
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { spawn, type ChildProcess } from "node:child_process";
+import { executeStopLossHook, type StopLossHookPayload } from "./hooks.js";
+
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(),
+}));
+
+const mockSpawn = vi.mocked(spawn);
+
+function createMockChild(): Partial<ChildProcess> {
+  return {
+    stdin: { write: vi.fn(), end: vi.fn() } as any,
+    stderr: { on: vi.fn() } as any,
+    on: vi.fn(),
+    unref: vi.fn(),
+  };
+}
+
+function samplePayload(): StopLossHookPayload {
+  return {
+    event: "stop-loss",
+    timestamp: "2026-03-08T10:30:00.000Z",
+    symbol: "BTC-KRW",
+    market_type: "cex",
+    side: "sell",
+    quantity: 0.1,
+    entry_price: 100000,
+    stop_price: 95000,
+    execution_price: 94500,
+    realized_pnl: -550,
+    order_id: "sl-001",
+  };
+}
+
+describe("executeStopLossHook", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("spawns the hook script and pipes JSON to stdin", () => {
+    const mockChild = createMockChild();
+    mockSpawn.mockReturnValue(mockChild as any);
+    const payload = samplePayload();
+
+    executeStopLossHook("/path/to/hook.sh", payload);
+
+    expect(mockSpawn).toHaveBeenCalledWith("/path/to/hook.sh", [], {
+      stdio: ["pipe", "ignore", "pipe"],
+      detached: true,
+    });
+    expect(mockChild.stdin!.write).toHaveBeenCalledWith(
+      JSON.stringify(payload),
+    );
+    expect(mockChild.stdin!.end).toHaveBeenCalled();
+    expect(mockChild.unref).toHaveBeenCalled();
+  });
+
+  it("resolves ~ in hook path", () => {
+    const mockChild = createMockChild();
+    mockSpawn.mockReturnValue(mockChild as any);
+
+    executeStopLossHook("~/hooks/on-stop-loss.sh", samplePayload());
+
+    const calledPath = mockSpawn.mock.calls[0][0] as string;
+    expect(calledPath).not.toContain("~");
+    expect(calledPath).toMatch(/\/hooks\/on-stop-loss\.sh$/);
+  });
+
+  it("does not throw when spawn emits an error", () => {
+    const mockChild = createMockChild();
+    mockSpawn.mockReturnValue(mockChild as any);
+    const onFn = mockChild.on as ReturnType<typeof vi.fn>;
+
+    executeStopLossHook("/path/to/hook.sh", samplePayload());
+
+    // Simulate spawn error
+    const errorHandler = onFn.mock.calls.find(
+      (c: any[]) => c[0] === "error",
+    )?.[1];
+    expect(errorHandler).toBeDefined();
+    expect(() => errorHandler(new Error("ENOENT"))).not.toThrow();
+  });
+});
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run: `pnpm vitest run src/monitor/hooks.test.ts`
+Expected: FAIL — `hooks.js` does not exist.
+
+**Step 3: Write minimal implementation**
+
+Create `src/monitor/hooks.ts`:
+
+```typescript
+import { spawn } from "node:child_process";
+import { homedir } from "node:os";
+
+export interface StopLossHookPayload {
+  event: "stop-loss";
+  timestamp: string;
+  symbol: string;
+  market_type: string;
+  side: "sell";
+  quantity: number;
+  entry_price: number;
+  stop_price: number;
+  execution_price: number;
+  realized_pnl: number;
+  order_id: string;
+}
+
+function resolvePath(p: string): string {
+  if (p.startsWith("~/")) {
+    return p.replace("~", homedir());
+  }
+  return p;
+}
+
+export function executeStopLossHook(
+  hookPath: string,
+  payload: StopLossHookPayload,
+): void {
+  const resolved = resolvePath(hookPath);
+  const child = spawn(resolved, [], {
+    stdio: ["pipe", "ignore", "pipe"],
+    detached: true,
+  });
+  child.stdin!.write(JSON.stringify(payload));
+  child.stdin!.end();
+  child.on("error", (err) =>
+    console.error(`[hook] failed to execute: ${err.message}`),
+  );
+  child.stderr!.on("data", (data: Buffer) =>
+    console.error(`[hook] stderr: ${data}`),
+  );
+  child.unref();
+}
+```
+
+**Step 4: Run tests to verify they pass**
+
+Run: `pnpm vitest run src/monitor/hooks.test.ts`
+Expected: ALL PASS (3 tests).
+
+**Step 5: Commit**
+
+```bash
+git add src/monitor/hooks.ts src/monitor/hooks.test.ts
+git commit -m "feat: add stop-loss hook executor module with tests"
+```
+
+---
+
+## Task 3: Integrate hook into `runner.ts` with tests (TDD)
+
+**Files:**
+- Modify: `src/monitor/runner.ts:1-20,62-86`
+- Modify: `src/monitor/runner.test.ts`
+
+**Step 1: Add hook test to runner.test.ts**
+
+Append to the `describe` block in `src/monitor/runner.test.ts`:
+
+```typescript
+// Add import at top:
+import { executeStopLossHook } from "./hooks.js";
+vi.mock("./hooks.js", () => ({
+  executeStopLossHook: vi.fn(),
+}));
+const mockExecuteHook = vi.mocked(executeStopLossHook);
+
+// Add these tests inside the describe block:
+
+it("calls stop-loss hook when configured and order is filled", async () => {
+  mockExecuteHook.mockClear();
+  const mockExchange = {
+    name: "upbit",
+    getPrice: vi.fn().mockResolvedValue({ price: 90000, symbol: "BTC-KRW" }),
+    placeOrder: vi
+      .fn()
+      .mockResolvedValue({ id: "sl-hook-001", status: "filled", filledPrice: 90000, filledAmount: 0.01 }),
+  };
+  const mockRegistry = { get: vi.fn().mockReturnValue(mockExchange) };
+  const mockPositionRepo = {
+    listAll: vi.fn().mockReturnValue([
+      {
+        market_type: "cex",
+        via: "upbit",
+        symbol: "BTC-KRW",
+        quantity: 0.01,
+        avg_entry_price: 100000,
+      },
+    ]),
+    upsert: vi.fn(),
+  };
+
+  const ctx: MonitorContext = {
+    registry: mockRegistry as any,
+    positionRepo: mockPositionRepo as any,
+    orderRepo: { create: vi.fn() } as any,
+    pnlRepo: createMockPnlRepo() as any,
+    riskManager: createMockRiskManager() as any,
+    riskConfig: mockRiskConfig(0.05),
+    onStopLossHook: "~/hooks/on-stop-loss.sh",
+  };
+
+  await checkStopLoss(ctx);
+
+  expect(mockExecuteHook).toHaveBeenCalledOnce();
+  expect(mockExecuteHook).toHaveBeenCalledWith(
+    "~/hooks/on-stop-loss.sh",
+    expect.objectContaining({
+      event: "stop-loss",
+      symbol: "BTC-KRW",
+      market_type: "cex",
+      side: "sell",
+      order_id: "sl-hook-001",
+    }),
+  );
+});
+
+it("does not call hook when on-stop-loss-hook is not configured", async () => {
+  mockExecuteHook.mockClear();
+  const mockExchange = {
+    name: "upbit",
+    getPrice: vi.fn().mockResolvedValue({ price: 90000, symbol: "BTC-KRW" }),
+    placeOrder: vi
+      .fn()
+      .mockResolvedValue({ id: "sl-no-hook", status: "filled" }),
+  };
+  const mockRegistry = { get: vi.fn().mockReturnValue(mockExchange) };
+  const mockPositionRepo = {
+    listAll: vi.fn().mockReturnValue([
+      {
+        market_type: "cex",
+        via: "upbit",
+        symbol: "BTC-KRW",
+        quantity: 0.01,
+        avg_entry_price: 100000,
+      },
+    ]),
+    upsert: vi.fn(),
+  };
+
+  const ctx: MonitorContext = {
+    registry: mockRegistry as any,
+    positionRepo: mockPositionRepo as any,
+    orderRepo: { create: vi.fn() } as any,
+    pnlRepo: createMockPnlRepo() as any,
+    riskManager: createMockRiskManager() as any,
+    riskConfig: mockRiskConfig(0.05),
+    // no onStopLossHook
+  };
+
+  await checkStopLoss(ctx);
+
+  expect(mockExecuteHook).not.toHaveBeenCalled();
+});
+
+it("does not call hook when order is pending", async () => {
+  mockExecuteHook.mockClear();
+  const mockExchange = {
+    name: "upbit",
+    getPrice: vi.fn().mockResolvedValue({ price: 90000, symbol: "BTC-KRW" }),
+    placeOrder: vi
+      .fn()
+      .mockResolvedValue({ id: "sl-pending", status: "pending" }),
+  };
+  const mockRegistry = { get: vi.fn().mockReturnValue(mockExchange) };
+  const mockPositionRepo = {
+    listAll: vi.fn().mockReturnValue([
+      {
+        market_type: "cex",
+        via: "upbit",
+        symbol: "BTC-KRW",
+        quantity: 0.01,
+        avg_entry_price: 100000,
+      },
+    ]),
+    upsert: vi.fn(),
+  };
+
+  const ctx: MonitorContext = {
+    registry: mockRegistry as any,
+    positionRepo: mockPositionRepo as any,
+    orderRepo: { create: vi.fn() } as any,
+    pnlRepo: createMockPnlRepo() as any,
+    riskManager: createMockRiskManager() as any,
+    riskConfig: mockRiskConfig(0.05),
+    onStopLossHook: "~/hooks/on-stop-loss.sh",
+  };
+
+  await checkStopLoss(ctx);
+
+  expect(mockExecuteHook).not.toHaveBeenCalled();
+});
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run: `pnpm vitest run src/monitor/runner.test.ts`
+Expected: FAIL — `onStopLossHook` not in `MonitorContext`, `executeStopLossHook` never called.
+
+**Step 3: Modify runner.ts**
+
+In `src/monitor/runner.ts`:
+
+a) Add import at top:
+```typescript
+import { executeStopLossHook } from "./hooks.js";
+import type { StopLossHookPayload } from "./hooks.js";
+```
+
+b) Add `onStopLossHook` to `MonitorContext`:
+```typescript
+export interface MonitorContext {
+  registry: ExchangeRegistry;
+  positionRepo: PositionRepository;
+  orderRepo: OrderRepository;
+  pnlRepo: DailyPnlRepository;
+  riskManager: RiskManager;
+  riskConfig: RiskConfig;
+  intervalMs?: number;
+  onStopLossHook?: string;
+}
+```
+
+c) After the filled branch (after `actions.push(...)` on line 79-81), add hook call:
+
+```typescript
+if (ctx.onStopLossHook) {
+  const hookPayload: StopLossHookPayload = {
+    event: "stop-loss",
+    timestamp: new Date().toISOString(),
+    symbol: pos.symbol,
+    market_type: pos.market_type,
+    side: "sell",
+    quantity: soldQty,
+    entry_price: pos.avg_entry_price,
+    stop_price: stopPrice,
+    execution_price: sellPrice,
+    realized_pnl: pnl,
+    order_id: order.id,
+  };
+  executeStopLossHook(ctx.onStopLossHook, hookPayload);
+}
+```
+
+**Step 4: Run tests to verify they pass**
+
+Run: `pnpm vitest run src/monitor/runner.test.ts`
+Expected: ALL PASS (including 3 new hook tests + 7 existing).
+
+**Step 5: Commit**
+
+```bash
+git add src/monitor/runner.ts src/monitor/runner.test.ts
+git commit -m "feat: integrate stop-loss hook into monitor runner"
+```
+
+---
+
+## Task 4: Wire config to runner in `commands/monitor.ts`
+
+**Files:**
+- Modify: `src/commands/monitor.ts` (the `monitor run` command handler)
+
+**Step 1: Read the monitor run command to find where MonitorContext is constructed**
+
+Look for where `startMonitor(ctx)` is called and `ctx` is built.
+
+**Step 2: Add `onStopLossHook` from config**
+
+Where `MonitorContext` is constructed, add:
+
+```typescript
+onStopLossHook: config.monitor["on-stop-loss-hook"] || undefined,
+```
+
+Ensure empty string `""` is treated as unset (falsy → `undefined`).
+
+**Step 3: Verify build**
+
+Run: `pnpm build`
+Expected: SUCCESS.
+
+**Step 4: Run all monitor tests**
+
+Run: `pnpm vitest run src/monitor/`
+Expected: ALL PASS.
+
+**Step 5: Commit**
+
+```bash
+git add src/commands/monitor.ts
+git commit -m "feat: wire on-stop-loss-hook config to monitor runner"
+```
+
+---
+
+## Task 5: Final verification and squash
+
+**Step 1: Run full test suite**
+
+Run: `pnpm vitest run`
+Expected: ALL PASS.
+
+**Step 2: Run build**
+
+Run: `pnpm build`
+Expected: SUCCESS.
+
+**Step 3: Squash commits into one**
+
+Squash the 4 task commits into a single commit:
+
+```bash
+git rebase -r HEAD~4
+# squash into: "feat: add stop-loss hook for monitor"
+```
+
+---
+
+## Summary of changes
+
+| File | Action | What |
+|------|--------|------|
+| `src/config/types.ts` | Modify | Add `on-stop-loss-hook?` to `MonitorConfig` |
+| `src/monitor/hooks.ts` | Create | `StopLossHookPayload` interface + `executeStopLossHook()` |
+| `src/monitor/hooks.test.ts` | Create | 3 tests: spawn+pipe, tilde resolve, error handling |
+| `src/monitor/runner.ts` | Modify | Add `onStopLossHook` to context, call hook on filled sell |
+| `src/monitor/runner.test.ts` | Modify | 3 new tests: hook called, not called when unset, not called when pending |
+| `src/commands/monitor.ts` | Modify | Pass config hook path to MonitorContext |
