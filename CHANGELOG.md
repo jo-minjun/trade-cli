@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Stop-loss hook: optional shell script (`monitor.on-stop-loss-hook`) that fires on stop-loss sell, receiving trade details as JSON via stdin
 - Configurable monitor polling interval via `monitor.interval-seconds` in config.yaml
 - KIS `getOrder()` and `getOpenOrders()` using daily order inquiry API (`TTTC8001R`)
 - `stock orders` command for listing open stock orders

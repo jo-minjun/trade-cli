@@ -57,7 +57,7 @@ monitor:
 
 ### Stop-Loss Hook
 
-You can configure an optional shell script that runs whenever a stop-loss sell is executed. The script receives trade details as JSON via stdin, so you can integrate any notification system (Slack, Discord, etc.).
+You can configure an optional executable that runs whenever a stop-loss sell is executed. The script receives trade details as JSON via stdin, so you can integrate any notification system (Slack, Discord, etc.). Any language works (bash, python, node, etc.) as long as the file has a shebang and execute permission.
 
 ```bash
 # Set the hook script path
@@ -72,12 +72,13 @@ monitor:
   on-stop-loss-hook: ~/.trade-cli/hooks/on-stop-loss.sh
 ```
 
-**Example hook script:**
+**Example hook scripts:**
+
+Bash:
 
 ```bash
 #!/bin/bash
 # ~/.trade-cli/hooks/on-stop-loss.sh
-# Reads JSON from stdin and sends a Slack notification
 
 read -r payload
 symbol=$(echo "$payload" | jq -r '.symbol')
@@ -87,6 +88,24 @@ price=$(echo "$payload" | jq -r '.execution_price')
 curl -s -X POST "$SLACK_WEBHOOK_URL" \
   -H 'Content-Type: application/json' \
   -d "{\"text\": \"🔻 Stop-loss triggered: ${symbol} sold at ${price} (PnL: ${pnl})\"}"
+```
+
+Python:
+
+```python
+#!/usr/bin/env python3
+# ~/.trade-cli/hooks/on-stop-loss.py
+
+import json, sys, urllib.request
+
+payload = json.load(sys.stdin)
+message = f"🔻 Stop-loss: {payload['symbol']} sold at {payload['execution_price']} (PnL: {payload['realized_pnl']})"
+req = urllib.request.Request(
+    os.environ["SLACK_WEBHOOK_URL"],
+    data=json.dumps({"text": message}).encode(),
+    headers={"Content-Type": "application/json"},
+)
+urllib.request.urlopen(req)
 ```
 
 **JSON payload fields:**
@@ -105,7 +124,7 @@ curl -s -X POST "$SLACK_WEBHOOK_URL" \
 | `realized_pnl` | number | Realized profit/loss |
 | `order_id` | string | Exchange order ID |
 
-> **Note:** The hook runs asynchronously (fire-and-forget). Failures do not affect the monitor. Make sure the script is executable (`chmod +x`).
+> **Note:** The hook runs asynchronously (fire-and-forget). Failures do not affect the monitor. Make sure the file has a shebang (e.g. `#!/bin/bash`, `#!/usr/bin/env python3`) and is executable (`chmod +x`).
 
 ## Commands
 
