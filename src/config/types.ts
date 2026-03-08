@@ -39,6 +39,10 @@ export interface RiskConfig {
   prediction: MarketRiskConfig;
 }
 
+export interface MonitorConfig {
+  "interval-seconds": number;
+}
+
 export interface TradeConfig {
   cex: {
     "default-via": string;
@@ -53,4 +57,5 @@ export interface TradeConfig {
     [platform: string]: unknown;
   };
   risk: RiskConfig;
+  monitor: MonitorConfig;
 }

@@ -7,7 +7,7 @@ import type {
 import type { RiskManager } from "../risk/manager.js";
 import type { RiskConfig } from "../config/types.js";
 
-const CHECK_INTERVAL_MS = 30_000;
+const DEFAULT_INTERVAL_MS = 30_000;
 
 export interface MonitorContext {
   registry: ExchangeRegistry;
@@ -16,6 +16,7 @@ export interface MonitorContext {
   pnlRepo: DailyPnlRepository;
   riskManager: RiskManager;
   riskConfig: RiskConfig;
+  intervalMs?: number;
 }
 
 export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
@@ -93,12 +94,14 @@ export async function checkStopLoss(ctx: MonitorContext): Promise<string[]> {
 }
 
 export function startMonitor(ctx: MonitorContext): NodeJS.Timeout {
-  console.log("Stop-loss monitor started. Checking every 30 seconds...");
+  const intervalMs = ctx.intervalMs ?? DEFAULT_INTERVAL_MS;
+  const intervalSec = Math.round(intervalMs / 1000);
+  console.log(`Stop-loss monitor started. Checking every ${intervalSec} seconds...`);
   const timer = setInterval(async () => {
     const actions = await checkStopLoss(ctx);
     for (const action of actions) {
       console.log(`[${new Date().toISOString()}] ${action}`);
     }
-  }, CHECK_INTERVAL_MS);
+  }, intervalMs);
   return timer;
 }

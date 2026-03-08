@@ -142,6 +142,7 @@ export function createMonitorCommand(): Command {
         pnlRepo,
         riskManager,
         riskConfig: config.risk,
+        intervalMs: config.monitor["interval-seconds"] * 1000,
       });
     });
 

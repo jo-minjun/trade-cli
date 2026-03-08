@@ -1,4 +1,8 @@
-import type { RiskConfig, TradeConfig } from "./types.js";
+import type { MonitorConfig, RiskConfig, TradeConfig } from "./types.js";
+
+export const DEFAULT_MONITOR: MonitorConfig = {
+  "interval-seconds": 30,
+};
 
 export const DEFAULT_RISK: RiskConfig = {
   "max-total-capital": 1000000,
@@ -20,4 +24,5 @@ export const DEFAULT_CONFIG: TradeConfig = {
   stock: { "default-via": "kis" },
   prediction: { "default-via": "polymarket" },
   risk: DEFAULT_RISK,
+  monitor: DEFAULT_MONITOR,
 };
