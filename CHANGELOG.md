@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Configurable monitor polling interval via `monitor.interval-seconds` in config.yaml
+- KIS `getOrder()` and `getOpenOrders()` using daily order inquiry API (`TTTC8001R`)
+- `stock orders` command for listing open stock orders
+- `stock candles` command for viewing daily candle data
+- `OrderRepository.findByExternalId()` for order lookup by exchange-side ID
+- Order status polling (`waitForFill`) for stock buy/sell commands
+- Cancel DB sync: internal order status updated to `cancelled` on `stock cancel` and `cex cancel`
 - Polymarket trading via `@polymarket/clob-client` SDK (`placeOrder`, `cancelOrder`, `getBalance`, `getOpenOrders`)
 - `config setup --via polymarket` command for API credential generation
 - `--price` option for `prediction buy` and `prediction sell`
