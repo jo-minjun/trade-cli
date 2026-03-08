@@ -11,7 +11,8 @@ describe("stock CLI", () => {
     const mockOrderRepo = { create: vi.fn() } as any;
     const mockPositionRepo = { findBySymbol: vi.fn(), upsert: vi.fn() } as any;
     const mockPnlRepo = { record: vi.fn() } as any;
-    const cmd = createStockCommand(registry, mockRisk, mockOrderRepo, mockPositionRepo, mockPnlRepo);
+    const mockConfig = { cex: { "default-via": "upbit" }, stock: { "default-via": "kis" }, prediction: { "default-via": "polymarket" } } as any;
+    const cmd = createStockCommand(mockConfig, registry, mockRisk, mockOrderRepo, mockPositionRepo, mockPnlRepo);
     expect(cmd.name()).toBe("stock");
     const subcommands = cmd.commands.map((c) => c.name());
     expect(subcommands).toContain("price");

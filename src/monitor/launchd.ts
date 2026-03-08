@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 
@@ -20,7 +20,9 @@ function xmlEscape(str: string): string {
 
 function generatePlist(tradePath: string): string {
   const escapedPath = xmlEscape(tradePath);
+  const workDir = xmlEscape(dirname(tradePath));
   const logDir = xmlEscape(join(homedir(), ".trade-cli/logs"));
+  const currentPath = xmlEscape(process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -33,6 +35,13 @@ function generatePlist(tradePath: string): string {
     <string>monitor</string>
     <string>run</string>
   </array>
+  <key>WorkingDirectory</key>
+  <string>${workDir}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${currentPath}</string>
+  </dict>
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
@@ -82,7 +91,7 @@ export function getLaunchAgentStatus(): string {
     const output = execFileSync(
       "launchctl",
       ["print", `${getGuiDomain()}/${PLIST_NAME}`],
-      { encoding: "utf-8" },
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     );
     return output.includes("state = running") ? "running" : "stopped";
   } catch {

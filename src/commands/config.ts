@@ -90,6 +90,13 @@ export function createConfigCommand(): Command {
     .argument("<key>", "Config key (dot notation, e.g. risk.max-order-size)")
     .argument("<value>", "Value to set")
     .action((key: string, value: string) => {
+      const topKey = key.split(".")[0];
+      const VALID_TOP_KEYS = ["cex", "stock", "prediction", "risk"];
+      if (!VALID_TOP_KEYS.includes(topKey)) {
+        console.log(chalk.red(`Invalid config key: ${key}`));
+        console.log(`Valid top-level keys: ${VALID_TOP_KEYS.join(", ")}`);
+        return;
+      }
       const config = loadConfig();
       setNestedValue(config as unknown as Record<string, unknown>, key, value);
       saveConfig(config);

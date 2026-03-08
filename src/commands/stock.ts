@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import type { TradeConfig } from "../config/types.js";
 import type { ExchangeRegistry } from "../exchanges/registry.js";
 import type { RiskManager } from "../risk/manager.js";
 import type { OrderRepository, PositionRepository, DailyPnlRepository } from "../db/repository.js";
@@ -7,6 +8,7 @@ import { isStockExchange } from "../exchanges/types.js";
 import { withErrorHandling, updatePositionAfterOrder } from "./helpers.js";
 
 export function createStockCommand(
+  config: TradeConfig,
   registry: ExchangeRegistry,
   riskManager: RiskManager,
   orderRepo: OrderRepository,
@@ -19,7 +21,7 @@ export function createStockCommand(
     .command("price")
     .description("Get current stock price")
     .argument("<symbol>", "Stock code (e.g. 005930)")
-    .option("--via <broker>", "Broker to use", "kis")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
     .action(withErrorHandling(async (symbol: string, opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       const ticker = await exchange.getPrice(symbol);
@@ -34,7 +36,7 @@ export function createStockCommand(
   cmd
     .command("balance")
     .description("Get account balance")
-    .option("--via <broker>", "Broker to use", "kis")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
     .action(withErrorHandling(async (opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       const balances = await exchange.getBalance();
@@ -51,7 +53,7 @@ export function createStockCommand(
     .description("Place a buy order")
     .argument("<symbol>", "Stock code")
     .argument("<amount>", "Quantity")
-    .option("--via <broker>", "Broker to use", "kis")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
     .option("--type <type>", "Order type", "market")
     .option("--price <price>", "Limit price")
     .action(
@@ -111,7 +113,7 @@ export function createStockCommand(
     .description("Place a sell order")
     .argument("<symbol>", "Stock code")
     .argument("<amount>", "Quantity")
-    .option("--via <broker>", "Broker to use", "kis")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
     .option("--type <type>", "Order type", "market")
     .option("--price <price>", "Limit price")
     .action(
@@ -160,7 +162,7 @@ export function createStockCommand(
     .command("cancel")
     .description("Cancel an order")
     .argument("<order-id>", "Order ID")
-    .option("--via <broker>", "Broker to use", "kis")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
     .action(withErrorHandling(async (orderId: string, opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       const result = await exchange.cancelOrder(orderId);
@@ -173,7 +175,7 @@ export function createStockCommand(
     .command("info")
     .description("Get stock info")
     .argument("<symbol>", "Stock code")
-    .option("--via <broker>", "Broker to use", "kis")
+    .option("--via <broker>", "Broker to use", config.stock["default-via"])
     .action(withErrorHandling(async (symbol: string, opts: { via: string }) => {
       const exchange = registry.get("stock", opts.via);
       if (!isStockExchange(exchange)) {

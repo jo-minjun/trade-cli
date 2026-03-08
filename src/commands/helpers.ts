@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import type { OrderResponse } from "../exchanges/types.js";
+import type { Exchange, OrderResponse } from "../exchanges/types.js";
 import type { PositionRepository, DailyPnlRepository } from "../db/repository.js";
 
 // Wraps async command actions with error handling
@@ -12,6 +12,19 @@ export function withErrorHandling(fn: (...args: any[]) => Promise<void>) {
       process.exitCode = 1;
     }
   };
+}
+
+// Polls order status until filled (for market orders that return "wait"/"pending")
+export async function waitForFill(exchange: Exchange, orderId: string, maxRetries = 3): Promise<OrderResponse> {
+  for (let i = 0; i < maxRetries; i++) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const order = await exchange.getOrder(orderId);
+    if (order.status === "filled" || order.status === "partially_filled") {
+      return order;
+    }
+  }
+  // Return last fetched state even if not filled
+  return exchange.getOrder(orderId);
 }
 
 // Updates position and PnL after a successful order

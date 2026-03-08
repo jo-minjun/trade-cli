@@ -146,38 +146,59 @@ export class UpbitExchange implements Exchange {
     return data.map((d: any) => this.toOrderResponse(d));
   }
 
-  // KRW-BTC <-> BTC-KRW conversion (Upbit uses KRW-BTC format)
+  // Convert to Upbit market format (quote-base, e.g. KRW-BTC)
+  // Priority: KRW > USDT > BTC (higher-priority quote always comes first)
   private toMarket(symbol: string): string {
     const parts = symbol.split("-");
     if (parts.length !== 2) return symbol;
-    if (parts[1] === "KRW" || parts[1] === "BTC" || parts[1] === "USDT") {
-      return `${parts[1]}-${parts[0]}`;
-    }
-    return symbol;
+    const QUOTE_PRIORITY: Record<string, number> = { KRW: 3, USDT: 2, BTC: 1 };
+    const p0 = QUOTE_PRIORITY[parts[0]] ?? 0;
+    const p1 = QUOTE_PRIORITY[parts[1]] ?? 0;
+    if (p0 >= p1) return symbol;
+    return `${parts[1]}-${parts[0]}`;
   }
 
   private toOrderResponse(data: any): OrderResponse {
+    const filledAmount = parseFloat(data.executed_volume ?? "0");
+    const filledPrice = this.calcFilledPrice(data.trades);
     return {
       id: data.uuid,
       symbol: data.market,
       side: data.side === "bid" ? "buy" : "sell",
       type: data.ord_type === "limit" ? "limit" : "market",
-      status: this.mapStatus(data.state),
+      status: this.mapStatus(data.state, data.ord_type, filledAmount),
       amount: parseFloat(data.volume ?? data.price ?? "0"),
       price: data.price ? parseFloat(data.price) : null,
-      filledAmount: parseFloat(data.executed_volume ?? "0"),
-      filledPrice: null,
+      filledAmount,
+      filledPrice,
       createdAt: data.created_at,
     };
   }
 
-  private mapStatus(state: string): OrderResponse["status"] {
+  // Upbit market buy (ord_type "price") always ends with state "cancel"
+  // even when fully filled. Treat as "filled" if executed_volume > 0.
+  private mapStatus(state: string, ordType?: string, filledAmount?: number): OrderResponse["status"] {
+    if (state === "cancel" && (ordType === "price" || ordType === "market") && filledAmount && filledAmount > 0) {
+      return "filled";
+    }
     switch (state) {
       case "wait": case "watch": return "pending";
       case "done": return "filled";
       case "cancel": return "cancelled";
       default: return "pending";
     }
+  }
+
+  // Calculate volume-weighted average price from trades array
+  private calcFilledPrice(trades?: any[]): number | null {
+    if (!trades || trades.length === 0) return null;
+    let totalFunds = 0;
+    let totalVolume = 0;
+    for (const t of trades) {
+      totalFunds += parseFloat(t.funds);
+      totalVolume += parseFloat(t.volume);
+    }
+    return totalVolume > 0 ? totalFunds / totalVolume : null;
   }
 
   private parseInterval(interval: string): { type: string; value: number } {

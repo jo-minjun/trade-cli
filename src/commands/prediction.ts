@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import type { TradeConfig } from "../config/types.js";
 import type { ExchangeRegistry } from "../exchanges/registry.js";
 import type { RiskManager } from "../risk/manager.js";
 import type { OrderRepository, PositionRepository, DailyPnlRepository } from "../db/repository.js";
@@ -7,6 +8,7 @@ import { isPredictionExchange } from "../exchanges/types.js";
 import { withErrorHandling, updatePositionAfterOrder } from "./helpers.js";
 
 export function createPredictionCommand(
+  config: TradeConfig,
   registry: ExchangeRegistry,
   riskManager: RiskManager,
   orderRepo: OrderRepository,
@@ -20,7 +22,7 @@ export function createPredictionCommand(
   cmd
     .command("markets")
     .description("Search prediction markets")
-    .option("--via <platform>", "Platform to use", "polymarket")
+    .option("--via <platform>", "Platform to use", config.prediction["default-via"])
     .option("--query <keyword>", "Search keyword")
     .action(withErrorHandling(async (opts: { via: string; query?: string }) => {
       const exchange = registry.get("prediction", opts.via);
@@ -44,7 +46,7 @@ export function createPredictionCommand(
     .command("market")
     .description("Get market details")
     .argument("<market-id>", "Market ID")
-    .option("--via <platform>", "Platform to use", "polymarket")
+    .option("--via <platform>", "Platform to use", config.prediction["default-via"])
     .action(withErrorHandling(async (marketId: string, opts: { via: string }) => {
       const exchange = registry.get("prediction", opts.via);
       if (!isPredictionExchange(exchange)) {
@@ -68,7 +70,7 @@ export function createPredictionCommand(
     .argument("<market-id>", "Market ID")
     .argument("<outcome>", "Outcome (YES/NO)")
     .argument("<amount>", "Amount in USDC")
-    .option("--via <platform>", "Platform to use", "polymarket")
+    .option("--via <platform>", "Platform to use", config.prediction["default-via"])
     .action(
       withErrorHandling(async (
         marketId: string,
@@ -115,7 +117,7 @@ export function createPredictionCommand(
     .argument("<market-id>", "Market ID")
     .argument("<outcome>", "Outcome (YES/NO)")
     .argument("<amount>", "Amount")
-    .option("--via <platform>", "Platform to use", "polymarket")
+    .option("--via <platform>", "Platform to use", config.prediction["default-via"])
     .action(
       withErrorHandling(async (
         marketId: string,
@@ -159,7 +161,7 @@ export function createPredictionCommand(
   cmd
     .command("positions")
     .description("Show prediction positions")
-    .option("--via <platform>", "Platform to use", "polymarket")
+    .option("--via <platform>", "Platform to use", config.prediction["default-via"])
     .action(withErrorHandling(async (opts: { via: string }) => {
       const exchange = registry.get("prediction", opts.via);
       if (!isPredictionExchange(exchange)) {

@@ -27,6 +27,25 @@ describe("UpbitExchange", () => {
     expect(ticker.price).toBe(133000000);
   });
 
+  describe("toMarket", () => {
+    it("returns Upbit format as-is when quote currency is first", () => {
+      expect((exchange as any).toMarket("KRW-BTC")).toBe("KRW-BTC");
+      expect((exchange as any).toMarket("BTC-ETH")).toBe("BTC-ETH");
+      expect((exchange as any).toMarket("USDT-BTC")).toBe("USDT-BTC");
+    });
+
+    it("swaps to Upbit format when base currency is first", () => {
+      expect((exchange as any).toMarket("BTC-KRW")).toBe("KRW-BTC");
+      expect((exchange as any).toMarket("ETH-BTC")).toBe("BTC-ETH");
+      expect((exchange as any).toMarket("BTC-USDT")).toBe("USDT-BTC");
+    });
+
+    it("returns symbol unchanged for non-standard formats", () => {
+      expect((exchange as any).toMarket("BTC")).toBe("BTC");
+      expect((exchange as any).toMarket("A-B-C")).toBe("A-B-C");
+    });
+  });
+
   it("placeOrder returns order response (mocked)", async () => {
     const mockResponse = {
       uuid: "test-uuid-123",
