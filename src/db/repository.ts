@@ -291,3 +291,27 @@ export class RiskEventRepository {
     }[];
   }
 }
+
+export interface CircuitBreakerRow {
+  active: number;
+  until_iso: string | null;
+  consecutive_losses: number;
+}
+
+export class CircuitBreakerRepository {
+  constructor(private db: Database.Database) {}
+
+  load(): CircuitBreakerRow {
+    return this.db
+      .prepare("SELECT active, until_iso, consecutive_losses FROM circuit_breaker_state WHERE id = 1")
+      .get() as CircuitBreakerRow;
+  }
+
+  save(active: boolean, untilIso: string | null, consecutiveLosses: number): void {
+    this.db
+      .prepare(
+        "UPDATE circuit_breaker_state SET active = ?, until_iso = ?, consecutive_losses = ?, updated_at = datetime('now') WHERE id = 1",
+      )
+      .run(active ? 1 : 0, untilIso, consecutiveLosses);
+  }
+}

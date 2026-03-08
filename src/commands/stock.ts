@@ -57,19 +57,29 @@ export function createStockCommand(
         opts: { via: string; type: string; price?: string },
       ) => {
         const amountNum = parseFloat(amount);
+        const exchange = registry.get("stock", opts.via);
+
+        // Compute KRW value for risk check: quantity * price
+        let orderValueKrw: number;
+        if (opts.price) {
+          orderValueKrw = amountNum * parseFloat(opts.price);
+        } else {
+          const ticker = await exchange.getPrice(symbol);
+          orderValueKrw = amountNum * ticker.price;
+        }
+
         const riskResult = riskManager.check({
           market_type: "stock",
           via: opts.via,
           symbol,
           side: "buy",
-          amount: amountNum,
+          amount: orderValueKrw,
         });
         if (!riskResult.approved) {
           console.log(chalk.red("Order rejected:"), riskResult.reason);
           return;
         }
 
-        const exchange = registry.get("stock", opts.via);
         const order = await exchange.placeOrder({
           symbol,
           side: "buy",
@@ -106,6 +116,18 @@ export function createStockCommand(
         opts: { via: string; type: string; price?: string },
       ) => {
         const amountNum = parseFloat(amount);
+        const riskResult = riskManager.check({
+          market_type: "stock",
+          via: opts.via,
+          symbol,
+          side: "sell",
+          amount: amountNum,
+        });
+        if (!riskResult.approved) {
+          console.log(chalk.red("Order rejected:"), riskResult.reason);
+          return;
+        }
+
         const exchange = registry.get("stock", opts.via);
         const order = await exchange.placeOrder({
           symbol,

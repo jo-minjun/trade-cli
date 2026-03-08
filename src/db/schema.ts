@@ -47,4 +47,14 @@ CREATE TABLE IF NOT EXISTS risk_events (
   details TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS circuit_breaker_state (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  active INTEGER NOT NULL DEFAULT 0,
+  until_iso TEXT,
+  consecutive_losses INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT OR IGNORE INTO circuit_breaker_state (id, active, consecutive_losses) VALUES (1, 0, 0);
 `;

@@ -74,4 +74,37 @@ describe("RiskManager", () => {
     expect(result.approved).toBe(false);
     expect(result.reason).toContain("circuit breaker");
   });
+
+  it("persists circuit breaker state across instances", () => {
+    risk.activateCircuitBreaker();
+    expect(risk.isCircuitBreakerActive()).toBe(true);
+
+    // Create a new RiskManager with the same DB — state should be restored
+    const risk2 = new RiskManager(DEFAULT_RISK, db);
+    expect(risk2.isCircuitBreakerActive()).toBe(true);
+    const result = risk2.check({ market_type: "cex", via: "upbit", symbol: "BTC-KRW", side: "buy", amount: 10000 });
+    expect(result.approved).toBe(false);
+    expect(result.reason).toContain("circuit breaker");
+  });
+
+  it("persists consecutive losses across instances", () => {
+    risk.recordLoss();
+    risk.recordLoss();
+    risk.recordLoss();
+
+    const risk2 = new RiskManager(DEFAULT_RISK, db);
+    risk2.recordLoss();
+    risk2.recordLoss();
+    // 3 + 2 = 5 total losses should trigger circuit breaker
+    expect(risk2.isCircuitBreakerActive()).toBe(true);
+  });
+
+  it("approves order when today PnL is positive (daily loss only counts losses)", () => {
+    const pnlRepo = new DailyPnlRepository(db);
+    const today = new Date().toISOString().split("T")[0];
+    pnlRepo.record(today, "cex", "upbit", 40000, true);
+
+    const result = risk.check({ market_type: "cex", via: "upbit", symbol: "BTC-KRW", side: "buy", amount: 100000 });
+    expect(result.approved).toBe(true);
+  });
 });

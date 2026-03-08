@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { RiskConfig } from "../config/types.js";
-import { PositionRepository, DailyPnlRepository, RiskEventRepository } from "../db/repository.js";
+import { PositionRepository, DailyPnlRepository, RiskEventRepository, CircuitBreakerRepository } from "../db/repository.js";
 
 export interface RiskCheckInput {
   market_type: "cex" | "stock" | "prediction";
@@ -19,6 +19,7 @@ export class RiskManager {
   private positionRepo: PositionRepository;
   private pnlRepo: DailyPnlRepository;
   private eventRepo: RiskEventRepository;
+  private cbRepo: CircuitBreakerRepository;
   private circuitBreakerActive = false;
   private circuitBreakerUntil: Date | null = null;
   private consecutiveLosses = 0;
@@ -30,6 +31,24 @@ export class RiskManager {
     this.positionRepo = new PositionRepository(db);
     this.pnlRepo = new DailyPnlRepository(db);
     this.eventRepo = new RiskEventRepository(db);
+    this.cbRepo = new CircuitBreakerRepository(db);
+    this.restoreState();
+  }
+
+  private restoreState(): void {
+    const row = this.cbRepo.load();
+    if (!row) return;
+    this.circuitBreakerActive = row.active === 1;
+    this.circuitBreakerUntil = row.until_iso ? new Date(row.until_iso) : null;
+    this.consecutiveLosses = row.consecutive_losses;
+  }
+
+  private persistState(): void {
+    this.cbRepo.save(
+      this.circuitBreakerActive,
+      this.circuitBreakerUntil?.toISOString() ?? null,
+      this.consecutiveLosses,
+    );
   }
 
   check(input: RiskCheckInput): RiskCheckResult {
@@ -55,9 +74,10 @@ export class RiskManager {
     const todayPnl = this.pnlRepo.getTodayTotalPnl(today);
     const marketConfig = this.config[input.market_type];
     const potentialLoss = input.amount * marketConfig["stop-loss"];
-    if (Math.abs(todayPnl) + potentialLoss >= this.config["max-daily-loss"]) {
+    const realizedLoss = Math.abs(Math.min(0, todayPnl));
+    if (realizedLoss + potentialLoss >= this.config["max-daily-loss"]) {
       this.eventRepo.log("rejected", `Daily loss limit reached: current=${todayPnl}, potential=${potentialLoss}`);
-      return { approved: false, reason: `Max daily loss limit exceeded (current loss: ${Math.abs(todayPnl)}, potential: ${potentialLoss}, limit: ${this.config["max-daily-loss"]})` };
+      return { approved: false, reason: `Max daily loss limit exceeded (current loss: ${realizedLoss}, potential: ${potentialLoss}, limit: ${this.config["max-daily-loss"]})` };
     }
 
     // 4. Market allocation limit check
@@ -91,23 +111,28 @@ export class RiskManager {
     this.consecutiveLosses++;
     if (this.consecutiveLosses >= this.config["circuit-breaker"]["consecutive-losses"]) {
       this.activateCircuitBreaker();
+    } else {
+      this.persistState();
     }
   }
 
   recordWin(): void {
     this.consecutiveLosses = 0;
+    this.persistState();
   }
 
   activateCircuitBreaker(): void {
     this.circuitBreakerActive = true;
     this.circuitBreakerUntil = new Date(Date.now() + this.config["circuit-breaker"]["cooldown-minutes"] * 60 * 1000);
     this.eventRepo.log("circuit_breaker", `Circuit breaker activated. Expires: ${this.circuitBreakerUntil.toISOString()}`);
+    this.persistState();
   }
 
   resetCircuitBreaker(): void {
     this.circuitBreakerActive = false;
     this.circuitBreakerUntil = null;
     this.consecutiveLosses = 0;
+    this.persistState();
   }
 
   isCircuitBreakerActive(): boolean {
